@@ -179,110 +179,6 @@ class MeshBuilder {
   }
 
   /**
-   * Adds a single-piece hollow wooden shell with a 100% seamless beveled exterior
-   * (no joint lines on the front, side, or top faces) and an authentic hollow interior cavity.
-   * If openTop is true (Base), the cavity opens at +Y.
-   * If openTop is false (Lid), the cavity opens at -Y.
-   */
-  addHollowBeveledShell(minX, minY, minZ, maxX, maxY, maxZ, wallThick, slabThick, bevel, openTop, matId, extra = 0) {
-    const b = bevel;
-    const x0 = minX, x1 = minX + b, x2 = maxX - b, x3 = maxX;
-    const y0 = minY, y1 = minY + b, y2 = maxY - b, y3 = maxY;
-    const z0 = minZ, z1 = minZ + b, z2 = maxZ - b, z3 = maxZ;
-
-    const ix0 = minX + wallThick;
-    const ix1 = maxX - wallThick;
-    const iz0 = minZ + wallThick;
-    const iz1 = maxZ - wallThick;
-
-    // Seamless Exterior Vertical Faces
-    // Front (+Z)
-    this.addFace([x1, y1, z3], [x2, y1, z3], [x2, y2, z3], [x1, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Back (-Z)
-    this.addFace([x2, y1, z0], [x1, y1, z0], [x1, y2, z0], [x2, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Right (+X)
-    this.addFace([x3, y1, z2], [x3, y1, z1], [x3, y2, z1], [x3, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Left (-X)
-    this.addFace([x0, y1, z1], [x0, y1, z2], [x0, y2, z2], [x0, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-    // 4 Top outer bevels
-    this.addFace([x1, y2, z3], [x2, y2, z3], [x2, y3, z2], [x1, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x2, y2, z0], [x1, y2, z0], [x1, y3, z1], [x2, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x3, y2, z2], [x3, y2, z1], [x2, y3, z1], [x2, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x0, y2, z1], [x0, y2, z2], [x1, y3, z2], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-    // 4 Bottom outer bevels
-    this.addFace([x1, y0, z2], [x2, y0, z2], [x2, y1, z3], [x1, y1, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x2, y0, z1], [x1, y0, z1], [x1, y1, z0], [x2, y1, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x2, y0, z2], [x2, y0, z1], [x3, y1, z1], [x3, y1, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x1, y0, z1], [x1, y0, z2], [x0, y1, z2], [x0, y1, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-    // 4 Vertical corner bevels
-    this.addFace([x2, y1, z3], [x3, y1, z2], [x3, y2, z2], [x2, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x3, y1, z1], [x2, y1, z0], [x2, y2, z0], [x3, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x1, y1, z0], [x0, y1, z1], [x0, y2, z1], [x1, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    this.addFace([x0, y1, z2], [x1, y1, z3], [x1, y2, z3], [x0, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-    const addCornerTri = (p0, p1, p2) => {
-      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-      const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
-      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      nx /= len; ny /= len; nz /= len;
-      const i0 = this.addVertex(p0[0], p0[1], p0[2], nx, ny, nz, 0, 0, matId, extra);
-      const i1 = this.addVertex(p1[0], p1[1], p1[2], nx, ny, nz, 1, 0, matId, extra);
-      const i2 = this.addVertex(p2[0], p2[1], p2[2], nx, ny, nz, 0.5, 1, matId, extra);
-      this.addTri(i0, i1, i2);
-    };
-
-    // 8 Outer corner triangles
-    addCornerTri([x2, y2, z3], [x3, y2, z2], [x2, y3, z2]);
-    addCornerTri([x3, y2, z1], [x2, y2, z0], [x2, y3, z1]);
-    addCornerTri([x1, y2, z0], [x0, y2, z1], [x1, y3, z1]);
-    addCornerTri([x0, y2, z2], [x1, y2, z3], [x1, y3, z2]);
-    addCornerTri([x3, y1, z2], [x2, y1, z3], [x2, y0, z2]);
-    addCornerTri([x2, y1, z0], [x3, y1, z1], [x2, y0, z1]);
-    addCornerTri([x0, y1, z1], [x1, y1, z0], [x1, y0, z1]);
-    addCornerTri([x1, y1, z3], [x0, y1, z2], [x1, y0, z2]);
-
-    if (openTop) {
-      // Base: Solid bottom face (-Y), hollow cavity opening at Top (+Y)
-      this.addFace([x1, y0, z1], [x2, y0, z1], [x2, y0, z2], [x1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      const cy = minY + slabThick;
-
-      // Top rim (4 strips around the open cavity at y3)
-      this.addFace([x1, y3, z2], [ix0, y3, z2], [ix0, y3, z1], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, y3, z2], [x2, y3, z2], [x2, y3, z1], [ix1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, y3, z2], [ix1, y3, z2], [ix1, y3, iz1], [ix0, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, y3, iz0], [ix1, y3, iz0], [ix1, y3, z1], [ix0, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-      // 4 Inner cavity walls + cavity floor
-      this.addFace([ix0, cy, iz1], [ix0, cy, iz0], [ix0, y3, iz0], [ix0, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, cy, iz0], [ix1, cy, iz1], [ix1, y3, iz1], [ix1, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, cy, iz1], [ix0, cy, iz1], [ix0, y3, iz1], [ix1, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, cy, iz0], [ix1, cy, iz0], [ix1, y3, iz0], [ix0, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, cy, iz1], [ix1, cy, iz1], [ix1, cy, iz0], [ix0, cy, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    } else {
-      // Lid: Seamless solid top face (+Y), hollow cavity opening at Bottom (-Y)
-      this.addFace([x1, y3, z2], [x2, y3, z2], [x2, y3, z1], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      const cy = maxY - slabThick;
-
-      // Bottom rim (4 strips around the open cavity at y0)
-      this.addFace([x1, y0, z1], [ix0, y0, z1], [ix0, y0, z2], [x1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, y0, z1], [x2, y0, z1], [x2, y0, z2], [ix1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, y0, iz1], [ix1, y0, iz1], [ix1, y0, z2], [ix0, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, y0, z1], [ix1, y0, z1], [ix1, y0, iz0], [ix0, y0, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-
-      // 4 Inner cavity walls + cavity ceiling
-      this.addFace([ix0, y0, iz0], [ix0, y0, iz1], [ix0, cy, iz1], [ix0, cy, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, y0, iz1], [ix1, y0, iz0], [ix1, cy, iz0], [ix1, cy, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, y0, iz1], [ix1, y0, iz1], [ix1, cy, iz1], [ix0, cy, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix1, y0, iz0], [ix0, y0, iz0], [ix0, cy, iz0], [ix1, cy, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-      this.addFace([ix0, cy, iz0], [ix1, cy, iz0], [ix1, cy, iz1], [ix0, cy, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    }
-  }
-
-  /**
    * Adds a cylinder along Z or Y axis for screws, hinge barrels, and rounded brass tabs
    */
   addDiskZ(cx, cy, z0, z1, radius, segments, matId, extra = 0, halfAngleStart = 0, halfAngleEnd = Math.PI * 2) {
@@ -321,24 +217,8 @@ class MeshBuilder {
 }
 
 /**
- * 0. Build Studio Floor Plane (shadow & glossy reflection receiver)
- */
-export function buildFloorMesh() {
-  const mb = new MeshBuilder();
-  const floorSize = 18.0;
-  mb.addFace(
-    [-floorSize, -0.001, floorSize],
-    [floorSize, -0.001, floorSize],
-    [floorSize, -0.001, -floorSize],
-    [-floorSize, -0.001, -floorSize],
-    [-1, -1], [1, -1], [1, 1], [-1, 1],
-    MATERIAL.FLOOR, 0
-  );
-  return mb.toTypedArrays();
-}
-
-/**
  * 1. Build Static Base Mesh:
+ * - Studio shadow plane
  * - Hollow mahogany base with beveled exterior walls
  * - Slotted cream-wood racks along left & right inner walls (45 slots)
  * - Lower front brass latch plate with rounded bottom tab, screws & catch post
@@ -352,8 +232,28 @@ export function buildBaseMesh() {
   const wt = BOX_SPECS.wallThick;     // 0.17
   const bev = 0.026;
 
-  // Single-piece seamless outer Mahogany Base with hollow interior cavity
-  mb.addHollowBeveledShell(-hw, 0.0, -hl, hw, bh, hl, wt, 0.09, bev, true, MATERIAL.WOOD, 0.0);
+  // Studio floor plane (for subtle soft contact shadow)
+  const floorSize = 14.0;
+  mb.addFace(
+    [-floorSize, -0.002, floorSize],
+    [floorSize, -0.002, floorSize],
+    [floorSize, -0.002, -floorSize],
+    [-floorSize, -0.002, -floorSize],
+    [-1, -1], [1, -1], [1, 1], [-1, 1],
+    MATERIAL.FLOOR, 0
+  );
+
+  // Outer Mahogany Base: 4 walls + floor so interior is authentically hollow
+  // Left wall (-X)
+  mb.addBeveledBox(-hw, 0.0, -hl, -hw + wt, bh, hl, bev, MATERIAL.WOOD, 0.0);
+  // Right wall (+X)
+  mb.addBeveledBox(hw - wt, 0.0, -hl, hw, bh, hl, bev, MATERIAL.WOOD, 0.0);
+  // Front wall (+Z)
+  mb.addBeveledBox(-hw + wt - 0.02, 0.0, hl - wt, hw - wt + 0.02, bh, hl, bev, MATERIAL.WOOD, 0.0);
+  // Back wall (-Z)
+  mb.addBeveledBox(-hw + wt - 0.02, 0.0, -hl, hw - wt + 0.02, bh, -hl + wt, bev, MATERIAL.WOOD, 0.0);
+  // Base bottom floor slab
+  mb.addBox(-hw + wt * 0.5, 0.01, -hl + wt * 0.5, hw - wt * 0.5, 0.09, hl - wt * 0.5, MATERIAL.WOOD, 0.0);
 
   // Inner cream floor lining (under the slides so red blood drops pop like in reference photo 2)
   const innerX = hw - wt; // 0.79
@@ -430,8 +330,17 @@ export function buildLidMesh() {
   const wt = BOX_SPECS.wallThick;     // 0.17
   const bev = 0.026;
 
-  // Single-piece seamless outer Mahogany Lid with recessed hollow underside for the Index Card
-  mb.addHollowBeveledShell(-hw, 0.0, 0.0, hw, lh, L, wt, 0.09, bev, false, MATERIAL.WOOD, 0.0);
+  // Hollow lid frame so the recessed numbered index card sits inside when opened!
+  // Top roof panel
+  mb.addBeveledBox(-hw, lh - 0.09, 0.0, hw, lh, L, bev, MATERIAL.WOOD, 0.0);
+  // Left rim (-X)
+  mb.addBeveledBox(-hw, 0.0, 0.0, -hw + wt, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
+  // Right rim (+X)
+  mb.addBeveledBox(hw - wt, 0.0, 0.0, hw, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
+  // Front rim (+Z = L)
+  mb.addBeveledBox(-hw + wt - 0.02, 0.0, L - wt, hw - wt + 0.02, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
+  // Back rim (Z = 0)
+  mb.addBeveledBox(-hw + wt - 0.02, 0.0, 0.0, hw - wt + 0.02, lh - 0.05, wt, bev, MATERIAL.WOOD, 0.0);
 
   // Recessed Inner Cream Border Frame around Index Card
   const innerX = hw - wt;
