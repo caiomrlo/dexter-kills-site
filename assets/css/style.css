@@ -1,6 +1,6 @@
 :root {
-  --bg-studio-center: #dadada;
-  --bg-studio-edge: #b4b4b6;
+  --bg-studio-center: #fbfbfc;
+  --bg-studio-edge: #e4e5e8;
   --hud-bg: rgba(18, 16, 16, 0.78);
   --hud-border: rgba(255, 255, 255, 0.12);
   --accent-gold: #e0b354;
@@ -55,10 +55,9 @@ html, body {
 /* Headline */
 .headline {
   position: absolute;
-  left: clamp(24px, 6vw, 110px);
-  top: 50%;
-  transform: translateY(-50%);
-  max-width: 55vw;
+  left: clamp(16px, 2.5vw, 36px);
+  top: clamp(14px, 2.5vh, 30px);
+  max-width: 40vw;
   z-index: 10;
   pointer-events: none;
 }
@@ -67,8 +66,8 @@ html, body {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
   font-style: italic;
-  font-size: clamp(2.2rem, 8vw, 12rem);
-  line-height: 0.98;
+  font-size: clamp(0.85rem, 1.1vw, 1.1rem);
+  line-height: 1.2;
   letter-spacing: 0.005em;
 }
 
@@ -82,13 +81,14 @@ html, body {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  margin-bottom: 0.25em;
+  margin-bottom: 0.1em;
 }
 
 .headline .line-gray {
-  color: #3a3a3d;
-  font-size: 0.3em;
-  margin-left: 0.6em;
+  color: #555559;
+  font-size: 0.85em;
+  font-weight: 500;
+  margin-left: 0;
 }
 /* Error overlay */
 .error-overlay {
@@ -129,11 +129,9 @@ html, body {
 
 @media (max-width: 900px) {
   .headline {
-    top: 8vh;
-    transform: none;
-    max-width: calc(100vw - 48px);
+    max-width: calc(100vw - 32px);
   }
   .headline h1 {
-    font-size: clamp(1.8rem, 8vw, 3rem);
+    font-size: 0.85rem;
   }
 }

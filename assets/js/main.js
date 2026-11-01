@@ -392,7 +392,7 @@ class DexterBoxApp {
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
     Mat4.perspectiveZO(this.projMatrix, (38 * Math.PI) / 180, aspect, 0.1, 45.0);
     // Shift the scene to the right half of the screen (headline lives on the left)
-    const shiftX = aspect > 1.1 ? 0.45 : 0;
+    const shiftX = 0;
     this.projMatrix[8] = -shiftX;
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
