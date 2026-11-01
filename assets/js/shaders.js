@@ -34,7 +34,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-  @builtin(position) clipPos : vec4<f32>,
+  @builtin(position) @invariant clipPos : vec4<f32>,
   @location(0) worldPos : vec3<f32>,
   @location(1) localPos : vec3<f32>,
   @location(2) worldNormal : vec3<f32>,
@@ -53,7 +53,13 @@ fn vs_main(in : VertexInput) -> VertexOutput {
   out.uv = in.uv;
   out.matId = in.matId;
   out.extra = in.extra;
-  out.clipPos = scene.viewProj * worldPos4;
+  // Floor reflection pass (objParams.w < -0.5): mirror the geometry across the floor plane (Y = 0)
+  // only for rasterization; shading still uses the original (un-mirrored) world position/normal.
+  var clipWorld = worldPos4;
+  if (obj.objParams.w < -0.5) {
+    clipWorld.y = -clipWorld.y;
+  }
+  out.clipPos = scene.viewProj * clipWorld;
   return out;
 }
 
@@ -114,8 +120,32 @@ fn sampleStudioEnv(reflDir : vec3<f32>, roughness : f32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
+  let isReflection = obj.objParams.w < -0.5;
+
+  // For the mirrored floor reflection, view the original surface from the mirrored camera
+  var camPos = scene.cameraPos.xyz;
+  if (isReflection) {
+    camPos.y = -camPos.y;
+  }
+
+  let col = shadeSurface(in, camPos);
+
+  if (isReflection) {
+    // The studio floor itself is never reflected
+    if (i32(round(in.matId)) == 0) {
+      discard;
+    }
+    // Glossy floor reflection: strongest where the box touches the floor, fading out with height
+    let h = max(in.worldPos.y, 0.0);
+    let fade = 1.0 - smoothstep(0.0, 0.62, h);
+    return vec4<f32>(col.rgb, col.a * fade * fade * 0.50);
+  }
+  return col;
+}
+
+fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
   let N = normalize(in.worldNormal);
-  let V = normalize(scene.cameraPos.xyz - in.worldPos);
+  let V = normalize(camPos - in.worldPos);
   let R = reflect(-V, N);
   let NoV = max(dot(N, V), 0.001);
 
@@ -139,9 +169,9 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(max(dBox, vec2<f32>(0.0))) + min(max(dBox.x, dBox.y), 0.0);
 
     // Multi-layered soft studio contact + ambient shadow matching the reference photos
-    let tightContact = exp(-max(dist, 0.0) * 9.5) * 0.48;
-    let midShadow = exp(-max(dist + 0.05, 0.0) * 2.4) * 0.24;
-    let underBox = smoothstep(0.18, -0.05, dist) * 0.35;
+    let tightContact = exp(-max(dist, 0.0) * 16.0) * 0.20;
+    let midShadow = exp(-max(dist, 0.0) * 2.2) * 0.10 + exp(-max(dist, 0.0) * 0.75) * 0.06;
+    let underBox = smoothstep(0.10, -0.05, dist) * 0.12;
 
     // Additional soft shadow behind the box when the lid opens backward
     let lidRearDist = length((pXZ - vec2<f32>(0.0, -3.1)) * vec2<f32>(0.9, 0.7));
@@ -149,7 +179,7 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
 
     // Fade shadow out smoothly with radial distance so floor blends 100% into the CSS studio backdrop
     let radialFade = 1.0 - smoothstep(4.5, 11.0, length(pXZ));
-    let shadowAlpha = clamp((tightContact + midShadow + underBox + lidOpenShadow) * radialFade, 0.0, 0.78);
+    let shadowAlpha = clamp((tightContact + midShadow + underBox + lidOpenShadow) * radialFade, 0.0, 0.40);
 
     return vec4<f32>(0.04, 0.035, 0.035, shadowAlpha);
   }
@@ -181,16 +211,17 @@ fn fs_main(in : VertexOutput) -> @location(0) vec4<f32> {
     // Micro-normal perturbation from wood pores
     let nPerturb = normalize(N + vec3<f32>((finePores - 0.5) * 0.022, 0.0, (mediumStrands - 0.5) * 0.015));
 
-    let diff1 = max(dot(nPerturb, L1), 0.0);
-    let diff2 = max(dot(nPerturb, L2), 0.0);
-    let diff3 = max(dot(nPerturb, L3), 0.0);
-    let diffuse = diff1 * 0.72 + diff2 * 0.44 + diff3 * 0.28 + 0.36;
+    // Wrapped (half-Lambert style) diffuse for soft, gradual studio falloff across faces
+    let diff1 = clamp((dot(nPerturb, L1) + 0.35) / 1.35, 0.0, 1.0);
+    let diff2 = clamp((dot(nPerturb, L2) + 0.35) / 1.35, 0.0, 1.0);
+    let diff3 = clamp((dot(nPerturb, L3) + 0.35) / 1.35, 0.0, 1.0);
+    let diffuse = diff1 * 0.60 + diff2 * 0.34 + diff3 * 0.20 + 0.34;
 
     // Semi-gloss lacquer coat with broad softbox sheen + crisp bevel highlights
     let H1 = normalize(L1 + V);
     let H2 = normalize(L2 + V);
-    let specBroad = pow(max(dot(nPerturb, H1), 0.0), 28.0) * 0.22;
-    let specCoat  = pow(max(dot(N, H1), 0.0), 96.0) * 0.35 + pow(max(dot(N, H2), 0.0), 54.0) * 0.18;
+    let specBroad = pow(max(dot(nPerturb, H1), 0.0), 18.0) * 0.16;
+    let specCoat  = pow(max(dot(N, H1), 0.0), 64.0) * 0.22 + pow(max(dot(N, H2), 0.0), 40.0) * 0.12;
     let fresnel   = pow(1.0 - NoV, 4.2) * 0.24;
     let envRefl   = sampleStudioEnv(reflect(-V, nPerturb), 0.20);
 

@@ -97,7 +97,9 @@ export class TrophyBoxRenderer {
     // 1: Lid mesh
     // 2: Latch clasp loop mesh
     // 3..47: 45 Glass slides
-    this.maxObjects = 3 + BOX_SPECS.numSlides;
+    // 48..50: Mirrored floor reflections of Base, Lid, Clasp
+    this.reflSlotBase = 3 + BOX_SPECS.numSlides;
+    this.maxObjects = this.reflSlotBase + 3;
   }
 
   async init() {
@@ -362,6 +364,43 @@ export class TrophyBoxRenderer {
         count: this.sampleCount
       }
     });
+
+    // 3. Floor reflection pipelines.
+    // 3a. Depth-only pre-pass so only the nearest reflected surface is kept (no stacked translucency)
+    this.reflDepthPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format, writeMask: 0 }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
+      multisample: { count: this.sampleCount }
+    });
+
+    // 3b. Faded color pass, only on the surviving (equal-depth) reflected fragments
+    this.reflColorPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format: this.format,
+            blend: {
+              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+            }
+          }
+        ]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'equal', format: 'depth24plus' },
+      multisample: { count: this.sampleCount }
+    });
   }
 
   resize() {
@@ -431,6 +470,11 @@ export class TrophyBoxRenderer {
     // Slot 2: Clasp Loop
     this._writeObjectUniform(2, sceneState.claspMatrix, -1, 0, 0, 0);
 
+    // Mirrored floor reflections (seed = -1 flags the reflection path in the shaders)
+    this._writeObjectUniform(this.reflSlotBase + 0, sceneState.baseMatrix, -1, 0, 0, -1);
+    this._writeObjectUniform(this.reflSlotBase + 1, sceneState.lidMatrix, -1, 0, 0, -1);
+    this._writeObjectUniform(this.reflSlotBase + 2, sceneState.claspMatrix, -1, 0, 0, -1);
+
     // Slots 3..47: 45 Slides
     const slideOrder = [];
     const camZ = sceneState.cameraPos[2];
@@ -485,6 +529,19 @@ export class TrophyBoxRenderer {
     });
 
     renderPass.setBindGroup(0, this.sceneBindGroup);
+
+    // Floor reflection: depth pre-pass, then faded color on the nearest reflected surfaces.
+    // The (semi-transparent) floor shadow and the real box are drawn on top afterwards.
+    const reflMeshes = [this.baseMesh, this.lidMesh, this.claspMesh];
+    for (const pipeline of [this.reflDepthPipeline, this.reflColorPipeline]) {
+      renderPass.setPipeline(pipeline);
+      for (let m = 0; m < reflMeshes.length; m++) {
+        renderPass.setBindGroup(1, this.objectBindGroup, [(this.reflSlotBase + m) * OBJECT_UNIFORM_STRIDE]);
+        renderPass.setVertexBuffer(0, reflMeshes[m].vbo);
+        renderPass.setIndexBuffer(reflMeshes[m].ibo, 'uint32');
+        renderPass.drawIndexed(reflMeshes[m].indexCount);
+      }
+    }
 
     // Draw Solid Meshes (Base, Lid, Latch Clasp)
     renderPass.setPipeline(this.solidPipeline);

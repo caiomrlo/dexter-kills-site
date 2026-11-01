@@ -8,21 +8,24 @@ import { TrophyBoxRenderer } from './renderer.js';
 import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 
+// Initial / closed camera framing: straight-on front view (yaw 0) slightly above the box
+const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
+
 class DexterBoxApp {
   constructor() {
     this.canvas = document.getElementById('webgpu-canvas');
     this.renderer = new TrophyBoxRenderer(this.canvas);
 
-    // Camera Orbit State (starts at a 3/4 perspective matching Reference Image 1)
+    // Camera Orbit State (starts front-aligned: latch facing the viewer, lid receding in depth)
     this.camera = {
-      yaw: 0.58,
-      pitch: 0.48,
-      distance: 8.2,
-      target: [0.0, 0.36, -0.10],
-      targetYaw: 0.58,
-      targetPitch: 0.48,
-      targetDistance: 8.2,
-      targetCenter: [0.0, 0.36, -0.10],
+      yaw: CLOSED_VIEW.yaw,
+      pitch: CLOSED_VIEW.pitch,
+      distance: CLOSED_VIEW.distance,
+      target: [...CLOSED_VIEW.center],
+      targetYaw: CLOSED_VIEW.yaw,
+      targetPitch: CLOSED_VIEW.pitch,
+      targetDistance: CLOSED_VIEW.distance,
+      targetCenter: [...CLOSED_VIEW.center],
       pos: [0, 3, 8]
     };
 
@@ -189,9 +192,9 @@ class DexterBoxApp {
     if (!this.isOpen) {
       this.selectedSlide = -1;
       this.hoveredSlide = -1;
-      this.camera.targetCenter = [0.0, 0.36, -0.10];
-      this.camera.targetDistance = 8.2;
-      this.camera.targetPitch = 0.48;
+      this.camera.targetCenter = [...CLOSED_VIEW.center];
+      this.camera.targetDistance = CLOSED_VIEW.distance;
+      this.camera.targetPitch = CLOSED_VIEW.pitch;
     } else {
       // Shift camera target and distance to frame the entire open lid (Y up to 5.44) and slides
       this.camera.targetCenter = [0.0, 2.15, -0.85];
@@ -208,10 +211,10 @@ class DexterBoxApp {
       this.camera.targetDistance = 11.8;
       this.camera.targetCenter = [0.0, 2.15, -0.85];
     } else {
-      this.camera.targetYaw = 0.58;
-      this.camera.targetPitch = 0.48;
-      this.camera.targetDistance = 8.2;
-      this.camera.targetCenter = [0.0, 0.36, -0.10];
+      this.camera.targetYaw = CLOSED_VIEW.yaw;
+      this.camera.targetPitch = CLOSED_VIEW.pitch;
+      this.camera.targetDistance = CLOSED_VIEW.distance;
+      this.camera.targetCenter = [...CLOSED_VIEW.center];
     }
   }
 
