@@ -69,6 +69,14 @@ class DexterBoxApp {
     this.lastPointerPos = [0, 0];
     this.dragDistance = 0;
 
+    // Smooth Mouse Parallax State (normalized -1..1)
+    this.pointerNorm = [0.0, 0.0];
+    this.smoothMouse = [0.0, 0.0];
+    this.bgCyclorama = document.getElementById('bg-cyclorama');
+    this.bgSoftbox = document.getElementById('bg-softbox');
+    this.bgSpotlight = document.getElementById('bg-spotlight');
+    this.bgGrain = document.getElementById('bg-surface-grain');
+
     this.lastFrameTime = performance.now();
   }
 
@@ -180,6 +188,14 @@ class DexterBoxApp {
         }
       });
     }
+
+    // Track pointer position across the viewport for smooth studio parallax
+    window.addEventListener('pointermove', (e) => {
+      const vw = Math.max(1, window.innerWidth);
+      const vh = Math.max(1, window.innerHeight);
+      this.pointerNorm[0] = (e.clientX / vw) * 2.0 - 1.0;
+      this.pointerNorm[1] = (e.clientY / vh) * 2.0 - 1.0;
+    });
 
     window.addEventListener('resize', () => this.renderer.resize());
   }
@@ -371,7 +387,28 @@ class DexterBoxApp {
   }
 
   _updateKinematics(dt, timeSec) {
-    // 1. Smoothly damp camera orbit
+    // 0. Smoothly damp mouse parallax (silky studio inertia)
+    const parallaxSmooth = 1.0 - Math.exp(-4.2 * dt);
+    this.smoothMouse[0] += (this.pointerNorm[0] - this.smoothMouse[0]) * parallaxSmooth;
+    this.smoothMouse[1] += (this.pointerNorm[1] - this.smoothMouse[1]) * parallaxSmooth;
+
+    const mx = this.smoothMouse[0];
+    const my = this.smoothMouse[1];
+
+    if (this.bgCyclorama) {
+      this.bgCyclorama.style.transform = `translate3d(${(mx * -20.0).toFixed(2)}px, ${(my * -15.0).toFixed(2)}px, 0) scale(1.06)`;
+    }
+    if (this.bgSoftbox) {
+      this.bgSoftbox.style.transform = `translate3d(${(mx * -38.0).toFixed(2)}px, ${(my * -28.0).toFixed(2)}px, 0) scale(1.08)`;
+    }
+    if (this.bgSpotlight) {
+      this.bgSpotlight.style.transform = `translate3d(${(mx * 56.0).toFixed(2)}px, ${(my * 42.0).toFixed(2)}px, 0)`;
+    }
+    if (this.bgGrain) {
+      this.bgGrain.style.transform = `translate3d(${(mx * -28.0).toFixed(2)}px, ${(my * -20.0).toFixed(2)}px, 0) scale(1.07)`;
+    }
+
+    // 1. Smoothly damp camera orbit + subtle mouse parallax offset
     const camSmooth = 1.0 - Math.exp(-10.0 * dt);
     this.camera.yaw += (this.camera.targetYaw - this.camera.yaw) * camSmooth;
     this.camera.pitch += (this.camera.targetPitch - this.camera.pitch) * camSmooth;
@@ -380,10 +417,13 @@ class DexterBoxApp {
       this.camera.target[k] += (this.camera.targetCenter[k] - this.camera.target[k]) * camSmooth;
     }
 
-    const cosP = Math.cos(this.camera.pitch);
-    const sinP = Math.sin(this.camera.pitch);
-    const sinY = Math.sin(this.camera.yaw);
-    const cosY = Math.cos(this.camera.yaw);
+    const effectiveYaw = this.camera.yaw + mx * 0.036;
+    const effectivePitch = Math.max(0.08, Math.min(1.48, this.camera.pitch + my * 0.024));
+
+    const cosP = Math.cos(effectivePitch);
+    const sinP = Math.sin(effectivePitch);
+    const sinY = Math.sin(effectiveYaw);
+    const cosY = Math.cos(effectiveYaw);
 
     this.camera.pos[0] = this.camera.target[0] + this.camera.distance * cosP * sinY;
     this.camera.pos[1] = this.camera.target[1] + this.camera.distance * sinP;
@@ -489,6 +529,7 @@ class DexterBoxApp {
       time: timeSec,
       hoveredSlide: this.hoveredSlide,
       selectedSlide: this.selectedSlide,
+      mouseParallax: this.smoothMouse,
       baseMatrix: this.baseMatrix,
       lidMatrix: this.lidMatrix,
       claspMatrix: this.claspMatrix,

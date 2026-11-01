@@ -1,6 +1,8 @@
 :root {
-  --bg-studio-center: #dadada;
-  --bg-studio-edge: #b4b4b6;
+  --bg-studio-light: #d1d2d4;
+  --bg-studio-mid: #a7a8ac;
+  --bg-studio-shadow: #5c5d62;
+  --bg-studio-deep: #3d3e42;
   --hud-bg: rgba(18, 16, 16, 0.78);
   --hud-border: rgba(255, 255, 255, 0.12);
   --accent-gold: #e0b354;
@@ -24,7 +26,7 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 45%, var(--bg-studio-center) 0%, var(--bg-studio-edge) 100%);
+  background-color: var(--bg-studio-deep);
   font-family: var(--font-sans);
   color: var(--text-light);
 }
@@ -36,7 +38,74 @@ html, body {
   overflow: hidden;
 }
 
+/* Interactive Studio Gray Backdrop (Parallax Layers) */
+.studio-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.parallax-layer {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  will-change: transform;
+}
+
+/* Base studio cyclorama lighting: bright warm-cool gray on upper-left/center, deep slate shadow on right */
+.bg-cyclorama {
+  background:
+    radial-gradient(ellipse 68% 62% at 28% 36%, rgba(226, 227, 230, 0.92) 0%, rgba(192, 193, 197, 0.55) 45%, rgba(120, 122, 126, 0) 100%),
+    radial-gradient(ellipse 60% 55% at 54% 72%, rgba(186, 187, 190, 0.45) 0%, rgba(110, 111, 115, 0) 75%),
+    linear-gradient(112deg, #cfd0d3 0%, #b8b9bd 32%, #929398 58%, #5e5f64 82%, #3f4044 100%);
+}
+
+/* Studio softbox directional falloff & tabletop horizon sheen */
+.bg-softbox {
+  background:
+    radial-gradient(ellipse 50% 28% at 62% 62%, rgba(238, 238, 240, 0.22) 0%, transparent 70%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 38%, rgba(28, 29, 32, 0.34) 100%),
+    radial-gradient(circle at 86% 48%, rgba(36, 37, 40, 0.52) 0%, transparent 62%);
+}
+
+/* Smooth mouse-interactive studio key light halo */
+.bg-spotlight {
+  background:
+    radial-gradient(circle 560px at 50% 50%, rgba(255, 255, 255, 0.16) 0%, rgba(230, 231, 235, 0.06) 42%, transparent 72%);
+  mix-blend-mode: soft-light;
+}
+
+/* Subtle matte/satin studio concrete & tabletop micro-texture (no plastic, no blood) */
+.bg-surface-grain {
+  opacity: 0.26;
+  mix-blend-mode: overlay;
+  background-image:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.03) 0px,
+      rgba(255, 255, 255, 0.03) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+  background-size: 220px 220px, 100% 100%;
+}
+
+/* Cinematic studio edge vignette */
+.bg-vignette {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse 85% 80% at 46% 50%, transparent 52%, rgba(26, 27, 30, 0.42) 100%);
+}
+
 #webgpu-canvas {
+  position: relative;
+  z-index: 2;
   display: block;
   width: 100%;
   height: 100%;

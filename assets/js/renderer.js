@@ -1,12 +1,13 @@
 /**
  * WebGPU 3D Renderer for Dexter's Blood Slide Box
  * Uses native WebGPU API (navigator.gpu) with WGSL shaders, 4x MSAA,
- * dynamic uniform buffers, and back-to-front depth sorting for the 45 glass slides.
+ * dynamic uniform buffers, planar 3D reflection pass, and back-to-front depth sorting for the 45 glass slides.
  */
 
 import { WGSL_SHADER } from './shaders.js';
 import {
   BOX_SPECS,
+  buildFloorMesh,
   buildBaseMesh,
   buildLidMesh,
   buildLatchClaspMesh,
@@ -19,7 +20,6 @@ const OBJECT_UNIFORM_STRIDE = 256; // WebGPU minUniformBufferOffsetAlignment = 2
 
 /**
  * Generates the high-res 2D canvas texture for the lid's inner numbered Index Card (01 - 50)
- * matching Reference Image 2 (top-left and top-right).
  */
 function createIndexCardCanvas() {
   const canvas = document.createElement('canvas');
@@ -75,6 +75,19 @@ function createIndexCardCanvas() {
   return canvas;
 }
 
+/**
+ * Reflects a 4x4 column-major model matrix across the floor plane Y = 0
+ * by pre-multiplying with Scale(1, -1, 1).
+ */
+function reflectMatrixY(out, m) {
+  out.set(m);
+  out[1] = -m[1];
+  out[5] = -m[5];
+  out[9] = -m[9];
+  out[13] = -m[13];
+  return out;
+}
+
 export class TrophyBoxRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -87,17 +100,27 @@ export class TrophyBoxRenderer {
     this.depthTexture = null;
 
     // Meshes
+    this.floorMesh = null;
     this.baseMesh = null;
     this.lidMesh = null;
     this.claspMesh = null;
     this.slideMesh = null;
 
+    this.floorMatrix = Mat4.create();
+    this.reflBaseMatrix = Mat4.create();
+    this.reflLidMatrix = Mat4.create();
+    this.reflClaspMatrix = Mat4.create();
+
     // Total drawable objects:
     // 0: Base mesh
     // 1: Lid mesh
     // 2: Latch clasp loop mesh
-    // 3..47: 45 Glass slides
-    this.maxObjects = 3 + BOX_SPECS.numSlides;
+    // 3: Reflected Base mesh
+    // 4: Reflected Lid mesh
+    // 5: Reflected Latch clasp loop mesh
+    // 6: Studio Floor mesh
+    // 7..51: 45 Glass slides
+    this.maxObjects = 7 + BOX_SPECS.numSlides;
   }
 
   async init() {
@@ -154,6 +177,7 @@ export class TrophyBoxRenderer {
   }
 
   _createGeometries() {
+    this.floorMesh = this._uploadMesh(buildFloorMesh());
     this.baseMesh = this._uploadMesh(buildBaseMesh());
     this.lidMesh = this._uploadMesh(buildLidMesh());
     this.claspMesh = this._uploadMesh(buildLatchClaspMesh());
@@ -184,9 +208,9 @@ export class TrophyBoxRenderer {
   }
 
   _createUniformBuffers() {
-    // Scene uniforms: mat4 viewProj (64B) + vec4 cameraPos (16B) + vec4 params (16B) = 96B
+    // Scene uniforms: mat4 viewProj (64B) + vec4 cameraPos (16B) + vec4 params (16B) + vec4 mouseParallax (16B) = 112B
     this.sceneUniformBuffer = this.device.createBuffer({
-      size: 96,
+      size: 112,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
@@ -277,8 +301,51 @@ export class TrophyBoxRenderer {
       }
     ];
 
-    // 1. Opaque + Studio Floor Alpha Blend Pipeline (writes depth)
-    this.solidPipeline = this.device.createRenderPipeline({
+    const alphaBlendTarget = {
+      format: this.format,
+      blend: {
+        color: {
+          srcFactor: 'src-alpha',
+          dstFactor: 'one-minus-src-alpha',
+          operation: 'add'
+        },
+        alpha: {
+          srcFactor: 'one',
+          dstFactor: 'one-minus-src-alpha',
+          operation: 'add'
+        }
+      }
+    };
+
+    // 1. Studio Floor Pipeline (alpha-blended shadow + soft bounce, does not write depth so reflection pass can draw cleanly)
+    this.floorPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [alphaBlendTarget]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'less-equal',
+        format: 'depth24plus'
+      },
+      multisample: {
+        count: this.sampleCount
+      }
+    });
+
+    // 2a. Reflection Depth Pre-Pass Pipeline (resolves front-most surface of the reflected box without touching color buffer)
+    this.reflDepthPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
         module: shaderModule,
@@ -291,18 +358,7 @@ export class TrophyBoxRenderer {
         targets: [
           {
             format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
+            writeMask: 0
           }
         ]
       },
@@ -320,7 +376,61 @@ export class TrophyBoxRenderer {
       }
     });
 
-    // 2. Transparent Glass Slide Pipeline (sorted back-to-front, depth test on, depth write on for crisp blood drops)
+    // 2b. Reflection Color Pass Pipeline (shades only the closest reflected surface at each pixel so no back-faces bleed through)
+    this.reflColorPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [alphaBlendTarget]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'equal',
+        format: 'depth24plus'
+      },
+      multisample: {
+        count: this.sampleCount
+      }
+    });
+
+    // 3. Opaque Solid Box Pipeline (writes depth, overwrites reflection where real box occludes it)
+    this.solidPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [alphaBlendTarget]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less-equal',
+        format: 'depth24plus'
+      },
+      multisample: {
+        count: this.sampleCount
+      }
+    });
+
+    // 4. Transparent Glass Slide Pipeline (sorted back-to-front)
     this.glassPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
@@ -331,23 +441,7 @@ export class TrophyBoxRenderer {
       fragment: {
         module: shaderModule,
         entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
-          }
-        ]
+        targets: [alphaBlendTarget]
       },
       primitive: {
         topology: 'triangle-list',
@@ -396,11 +490,8 @@ export class TrophyBoxRenderer {
 
   _writeObjectUniform(slotIndex, modelMat, slideIdx, hoverAmt, selectAmt, seed) {
     const floatOffset = (slotIndex * OBJECT_UNIFORM_STRIDE) / 4;
-    // Model matrix
     this.objectStagingData.set(modelMat, floatOffset);
-    // Normal matrix (for rigid body transforms, modelMat works directly)
     this.objectStagingData.set(modelMat, floatOffset + 16);
-    // objParams
     this.objectStagingData[floatOffset + 32] = slideIdx;
     this.objectStagingData[floatOffset + 33] = hoverAmt;
     this.objectStagingData[floatOffset + 34] = selectAmt;
@@ -410,8 +501,8 @@ export class TrophyBoxRenderer {
   render(sceneState) {
     this.resize();
 
-    // 1. Update Scene Uniforms
-    const sceneData = new Float32Array(24);
+    // 1. Update Scene Uniforms (28 floats = 112 bytes)
+    const sceneData = new Float32Array(28);
     sceneData.set(sceneState.viewProjMatrix, 0);
     sceneData[16] = sceneState.cameraPos[0];
     sceneData[17] = sceneState.cameraPos[1];
@@ -421,17 +512,36 @@ export class TrophyBoxRenderer {
     sceneData[21] = sceneState.time;
     sceneData[22] = sceneState.hoveredSlide;
     sceneData[23] = sceneState.selectedSlide;
+    sceneData[24] = sceneState.mouseParallax ? sceneState.mouseParallax[0] : 0.0;
+    sceneData[25] = sceneState.mouseParallax ? sceneState.mouseParallax[1] : 0.0;
+    sceneData[26] = 0.0;
+    sceneData[27] = 0.0;
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
 
     // 2. Write Object Uniforms:
-    // Slot 0: Base
+    // Slot 0: Real Base
     this._writeObjectUniform(0, sceneState.baseMatrix, -1, 0, 0, 0);
-    // Slot 1: Lid
+    // Slot 1: Real Lid
     this._writeObjectUniform(1, sceneState.lidMatrix, -1, 0, 0, 0);
-    // Slot 2: Clasp Loop
+    // Slot 2: Real Clasp Loop
     this._writeObjectUniform(2, sceneState.claspMatrix, -1, 0, 0, 0);
 
-    // Slots 3..47: 45 Slides
+    // Compute Planar Floor Reflection Matrices (mirrored across Y = 0)
+    reflectMatrixY(this.reflBaseMatrix, sceneState.baseMatrix);
+    reflectMatrixY(this.reflLidMatrix, sceneState.lidMatrix);
+    reflectMatrixY(this.reflClaspMatrix, sceneState.claspMatrix);
+
+    // Slot 3: Reflected Base (slideIdx = -2 signals floor reflection mode in WGSL)
+    this._writeObjectUniform(3, this.reflBaseMatrix, -2, 0, 0, 0);
+    // Slot 4: Reflected Lid
+    this._writeObjectUniform(4, this.reflLidMatrix, -2, 0, 0, 0);
+    // Slot 5: Reflected Clasp Loop
+    this._writeObjectUniform(5, this.reflClaspMatrix, -2, 0, 0, 0);
+
+    // Slot 6: Studio Floor Mesh
+    this._writeObjectUniform(6, this.floorMatrix, -1, 0, 0, 0);
+
+    // Slots 7..51: 45 Slides
     const slideOrder = [];
     const camZ = sceneState.cameraPos[2];
     const camX = sceneState.cameraPos[0];
@@ -439,7 +549,7 @@ export class TrophyBoxRenderer {
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = sceneState.slides[i];
-      const slotIdx = 3 + i;
+      const slotIdx = 7 + i;
       this._writeObjectUniform(
         slotIdx,
         s.modelMatrix,
@@ -486,7 +596,50 @@ export class TrophyBoxRenderer {
 
     renderPass.setBindGroup(0, this.sceneBindGroup);
 
-    // Draw Solid Meshes (Base, Lid, Latch Clasp)
+    // PASS 1: Studio Floor Shadow & Satin Bounce (Slot 6)
+    renderPass.setPipeline(this.floorPipeline);
+    renderPass.setBindGroup(1, this.objectBindGroup, [6 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.floorMesh.vbo);
+    renderPass.setIndexBuffer(this.floorMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.floorMesh.indexCount);
+
+    // PASS 2A: Planar 3D Reflection Depth Pre-Pass (Slots 3, 4, 5)
+    renderPass.setPipeline(this.reflDepthPipeline);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [3 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.baseMesh.vbo);
+    renderPass.setIndexBuffer(this.baseMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.baseMesh.indexCount);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [4 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.lidMesh.vbo);
+    renderPass.setIndexBuffer(this.lidMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.lidMesh.indexCount);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [5 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.claspMesh.vbo);
+    renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.claspMesh.indexCount);
+
+    // PASS 2B: Planar 3D Reflection Color Pass (Slots 3, 4, 5)
+    renderPass.setPipeline(this.reflColorPipeline);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [3 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.baseMesh.vbo);
+    renderPass.setIndexBuffer(this.baseMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.baseMesh.indexCount);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [4 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.lidMesh.vbo);
+    renderPass.setIndexBuffer(this.lidMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.lidMesh.indexCount);
+
+    renderPass.setBindGroup(1, this.objectBindGroup, [5 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.claspMesh.vbo);
+    renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.claspMesh.indexCount);
+
+    // PASS 3: Real Opaque Box Meshes (Base, Lid, Latch Clasp - Slots 0, 1, 2)
     renderPass.setPipeline(this.solidPipeline);
 
     // Base (Slot 0)
@@ -507,7 +660,7 @@ export class TrophyBoxRenderer {
     renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
     renderPass.drawIndexed(this.claspMesh.indexCount);
 
-    // Draw 45 Glass Slides sorted back-to-front
+    // PASS 4: Draw 45 Glass Slides sorted back-to-front
     renderPass.setPipeline(this.glassPipeline);
     renderPass.setVertexBuffer(0, this.slideMesh.vbo);
     renderPass.setIndexBuffer(this.slideMesh.ibo, 'uint32');
