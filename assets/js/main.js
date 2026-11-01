@@ -69,9 +69,11 @@ class DexterBoxApp {
     this.lastPointerPos = [0, 0];
     this.dragDistance = 0;
 
-    // Smooth Mouse Parallax State (normalized -1..1)
+    // Smooth Mouse Parallax & Unified 3D Studio Point Light State
     this.pointerNorm = [0.0, 0.0];
     this.smoothMouse = [0.0, 0.0];
+    this.lightWorldPos = [-1.75, 2.75, 1.50];
+    this.studioBackdrop = document.querySelector('.studio-backdrop');
     this.bgCyclorama = document.getElementById('bg-cyclorama');
     this.bgSoftbox = document.getElementById('bg-softbox');
     this.bgSpotlight = document.getElementById('bg-spotlight');
@@ -401,9 +403,6 @@ class DexterBoxApp {
     if (this.bgSoftbox) {
       this.bgSoftbox.style.transform = `translate3d(${(mx * -38.0).toFixed(2)}px, ${(my * -28.0).toFixed(2)}px, 0) scale(1.08)`;
     }
-    if (this.bgSpotlight) {
-      this.bgSpotlight.style.transform = `translate3d(${(mx * 56.0).toFixed(2)}px, ${(my * 42.0).toFixed(2)}px, 0)`;
-    }
     if (this.bgGrain) {
       this.bgGrain.style.transform = `translate3d(${(mx * -28.0).toFixed(2)}px, ${(my * -20.0).toFixed(2)}px, 0) scale(1.07)`;
     }
@@ -417,8 +416,8 @@ class DexterBoxApp {
       this.camera.target[k] += (this.camera.targetCenter[k] - this.camera.target[k]) * camSmooth;
     }
 
-    const effectiveYaw = this.camera.yaw + mx * 0.036;
-    const effectivePitch = Math.max(0.08, Math.min(1.48, this.camera.pitch + my * 0.024));
+    const effectiveYaw = this.camera.yaw + mx * 0.045;
+    const effectivePitch = Math.max(0.08, Math.min(1.48, this.camera.pitch + my * 0.032));
 
     const cosP = Math.cos(effectivePitch);
     const sinP = Math.sin(effectivePitch);
@@ -437,6 +436,33 @@ class DexterBoxApp {
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
     Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
+
+    // 1b. Update 3D Studio Point Light Position & project into screen space so the entire scenario (light focus, global illumination, box shading & shadow) is interconnected
+    const lx = -1.75 + mx * 1.15;
+    const ly = 2.75 - my * 0.45;
+    const lz = 1.50 - mx * 0.35 + my * 0.95;
+    this.lightWorldPos[0] = lx;
+    this.lightWorldPos[1] = ly;
+    this.lightWorldPos[2] = lz;
+
+    if (this.studioBackdrop) {
+      const focusX = lx * 0.88;
+      const focusY = ly * 0.50;
+      const focusZ = lz * 0.88;
+      const vp = this.viewProjMatrix;
+      const clipX = vp[0] * focusX + vp[4] * focusY + vp[8] * focusZ + vp[12];
+      const clipY = vp[1] * focusX + vp[5] * focusY + vp[9] * focusZ + vp[13];
+      const clipW = vp[3] * focusX + vp[7] * focusY + vp[11] * focusZ + vp[15];
+
+      if (clipW > 0.001) {
+        const ndcX = clipX / clipW;
+        const ndcY = clipY / clipW;
+        const screenPctX = Math.max(-20, Math.min(120, (ndcX * 0.5 + 0.5) * 100));
+        const screenPctY = Math.max(-20, Math.min(120, (0.5 - ndcY * 0.5) * 100));
+        this.studioBackdrop.style.setProperty('--light-x', `${screenPctX.toFixed(2)}%`);
+        this.studioBackdrop.style.setProperty('--light-y', `${screenPctY.toFixed(2)}%`);
+      }
+    }
 
     // 2. Box Open/Close Two-Stage Animation Timeline
     const targetTimeline = this.isOpen ? 1.0 : 0.0;
@@ -529,6 +555,7 @@ class DexterBoxApp {
       time: timeSec,
       hoveredSlide: this.hoveredSlide,
       selectedSlide: this.selectedSlide,
+      lightPos: this.lightWorldPos,
       mouseParallax: this.smoothMouse,
       baseMatrix: this.baseMatrix,
       lidMatrix: this.lidMatrix,

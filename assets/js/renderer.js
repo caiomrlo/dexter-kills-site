@@ -512,10 +512,10 @@ export class TrophyBoxRenderer {
     sceneData[21] = sceneState.time;
     sceneData[22] = sceneState.hoveredSlide;
     sceneData[23] = sceneState.selectedSlide;
-    sceneData[24] = sceneState.mouseParallax ? sceneState.mouseParallax[0] : 0.0;
-    sceneData[25] = sceneState.mouseParallax ? sceneState.mouseParallax[1] : 0.0;
-    sceneData[26] = 0.0;
-    sceneData[27] = 0.0;
+    sceneData[24] = sceneState.lightPos ? sceneState.lightPos[0] : -1.75;
+    sceneData[25] = sceneState.lightPos ? sceneState.lightPos[1] : 2.75;
+    sceneData[26] = sceneState.lightPos ? sceneState.lightPos[2] : 1.50;
+    sceneData[27] = sceneState.mouseParallax ? sceneState.mouseParallax[0] : 0.0;
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
 
     // 2. Write Object Uniforms:

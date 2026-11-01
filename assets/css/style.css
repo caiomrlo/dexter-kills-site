@@ -38,13 +38,15 @@ html, body {
   overflow: hidden;
 }
 
-/* Interactive Studio Gray Backdrop (Parallax Layers) */
+/* Interactive Studio Gray Backdrop (Unified 3D Point Light + Parallax Layers) */
 .studio-backdrop {
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+  --light-x: 34%;
+  --light-y: 28%;
 }
 
 .parallax-layer {
@@ -52,30 +54,52 @@ html, body {
   inset: -8%;
   width: 116%;
   height: 116%;
-  will-change: transform;
+  will-change: transform, background;
 }
 
-/* Base studio cyclorama lighting: bright warm-cool gray on upper-left/center, deep slate shadow on right */
+/* Global studio illumination dictated by the dynamic 3D light point (--light-x, --light-y) */
 .bg-cyclorama {
   background:
-    radial-gradient(ellipse 68% 62% at 28% 36%, rgba(226, 227, 230, 0.92) 0%, rgba(192, 193, 197, 0.55) 45%, rgba(120, 122, 126, 0) 100%),
-    radial-gradient(ellipse 60% 55% at 54% 72%, rgba(186, 187, 190, 0.45) 0%, rgba(110, 111, 115, 0) 75%),
-    linear-gradient(112deg, #cfd0d3 0%, #b8b9bd 32%, #929398 58%, #5e5f64 82%, #3f4044 100%);
+    radial-gradient(
+      ellipse 62% 58% at var(--light-x, 34%) var(--light-y, 28%),
+      #dedfe2 0%,
+      #c4c5c9 28%,
+      #96989d 58%,
+      #58595f 84%,
+      #37383c 100%
+    );
 }
 
-/* Studio softbox directional falloff & tabletop horizon sheen */
+/* Studio softbox directional falloff & tabletop horizon sheen linked to the light source */
 .bg-softbox {
   background:
-    radial-gradient(ellipse 50% 28% at 62% 62%, rgba(238, 238, 240, 0.22) 0%, transparent 70%),
-    linear-gradient(165deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 38%, rgba(28, 29, 32, 0.34) 100%),
-    radial-gradient(circle at 86% 48%, rgba(36, 37, 40, 0.52) 0%, transparent 62%);
+    radial-gradient(
+      ellipse 48% 36% at calc(var(--light-x, 34%) + 8%) calc(var(--light-y, 28%) + 22%),
+      rgba(242, 242, 245, 0.24) 0%,
+      transparent 72%
+    ),
+    linear-gradient(162deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 42%, rgba(20, 21, 24, 0.42) 100%);
 }
 
-/* Smooth mouse-interactive studio key light halo */
+/* Visible soft studio point of light (core + atmospheric falloff) */
 .bg-spotlight {
+  inset: 0;
+  width: 100%;
+  height: 100%;
   background:
-    radial-gradient(circle 560px at 50% 50%, rgba(255, 255, 255, 0.16) 0%, rgba(230, 231, 235, 0.06) 42%, transparent 72%);
-  mix-blend-mode: soft-light;
+    radial-gradient(
+      circle 220px at var(--light-x, 34%) var(--light-y, 28%),
+      rgba(255, 253, 249, 0.48) 0%,
+      rgba(246, 245, 242, 0.24) 34%,
+      rgba(225, 226, 230, 0.07) 66%,
+      transparent 100%
+    ),
+    radial-gradient(
+      circle 640px at var(--light-x, 34%) var(--light-y, 28%),
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(220, 222, 226, 0.08) 46%,
+      transparent 78%
+    );
 }
 
 /* Subtle matte/satin studio concrete & tabletop micro-texture (no plastic, no blood) */
