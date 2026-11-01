@@ -5,77 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dexter — Blood Slide Box (WebGPU 3D)</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='60' y='20' rx='6' fill='rgba(210,240,235,0.6)' stroke='%2388bbaa' stroke-width='4'/><circle cx='50' cy='50' r='18' fill='%238b0d14'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
   <main class="viewer-section">
     <canvas id="webgpu-canvas"></canvas>
 
-    <!-- Top Minimal HUD -->
-    <header class="hud-header">
-      <div class="brand-badge">
-        <span class="status-dot" id="gpu-status-dot"></span>
-        <span class="brand-title">DEXTER MORGAN // TROPHY BOX</span>
-        <span class="tech-tag" id="gpu-backend-tag">WebGPU</span>
-      </div>
-      <div class="slide-counter" id="slide-counter">
-        <span class="counter-label">LÂMINA SELECIONADA</span>
-        <span class="counter-value" id="slide-counter-value">NENHUMA</span>
-      </div>
-    </header>
-
-    <!-- Slide Inspection Card (shown when a slide is clicked) -->
-    <aside class="slide-inspector hidden" id="slide-inspector">
-      <div class="inspector-header">
-        <span class="inspector-id" id="inspector-id">AMOSTRA #01</span>
-        <button class="inspector-close" id="inspector-close" title="Guardar lâmina">&times;</button>
-      </div>
-      <div class="inspector-body">
-        <div class="specimen-preview">
-          <div class="glass-plate-2d">
-            <div class="blood-drop-2d" id="inspector-drop"></div>
-          </div>
-        </div>
-        <div class="inspector-meta">
-          <div class="meta-row">
-            <span>SLOT</span>
-            <strong id="meta-slot">01 / 45</strong>
-          </div>
-          <div class="meta-row">
-            <span>ÍNDICE</span>
-            <strong id="meta-date">CATÁLOGO INTERNO</strong>
-          </div>
-          <div class="meta-row">
-            <span>COAGULAÇÃO</span>
-            <strong id="meta-coag">98.4% SECO</strong>
-          </div>
-        </div>
-        <div class="inspector-nav">
-          <button id="prev-slide-btn" class="nav-btn">&larr; Anterior</button>
-          <button id="next-slide-btn" class="nav-btn">Próxima &rarr;</button>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Bottom Interactive Controls -->
-    <footer class="hud-controls">
-      <div class="control-group">
-        <button id="toggle-box-btn" class="primary-btn">
-          <span class="btn-icon" id="toggle-box-icon">&#128275;</span>
-          <span id="toggle-box-text">Abrir Caixa</span>
-        </button>
-        <button id="reset-cam-btn" class="secondary-btn" title="Resetar Câmera">
-          Resetar Visão
-        </button>
-      </div>
-      <div class="interaction-hints" id="interaction-hints">
-        <span><strong>Arrastar:</strong> Rotacionar 360°</span>
-        <span class="sep">&bull;</span>
-        <span><strong>Scroll:</strong> Zoom</span>
-        <span class="sep">&bull;</span>
-        <span id="contextual-hint"><strong>Clique no fecho dourado:</strong> Abrir caixa</span>
-      </div>
-    </footer>
+    <div class="headline">
+      <h1>
+        <span class="line-blood">Alguns segredos não podem ser enterrados.</span>
+        <span class="line-gray">Eles precisam ser guardados.</span>
+      </h1>
+    </div>
 
     <!-- WebGPU Fallback Notice -->
     <div id="webgpu-error" class="error-overlay hidden">
