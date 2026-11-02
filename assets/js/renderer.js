@@ -7,12 +7,12 @@
 import { WGSL_SHADER } from './shaders.js';
 import {
   BOX_SPECS,
+  buildFloorMesh,
   buildBaseMesh,
   buildLidMesh,
   buildLatchClaspMesh,
   buildSingleSlideMesh
 } from './geometry.js';
-import { Mat4 } from './math.js';
 
 const OBJECT_UNIFORM_SIZE = 144; // 2 * mat4 (128B) + vec4 (16B) = 144B
 const OBJECT_UNIFORM_STRIDE = 256; // WebGPU minUniformBufferOffsetAlignment = 256 bytes
@@ -87,13 +87,14 @@ export class TrophyBoxRenderer {
     this.depthTexture = null;
 
     // Meshes
+    this.floorMesh = null;
     this.baseMesh = null;
     this.lidMesh = null;
     this.claspMesh = null;
     this.slideMesh = null;
 
     // Total drawable objects:
-    // 0: Base mesh
+    // 0: Base mesh (and Floor mesh shares identity transform at slot 0)
     // 1: Lid mesh
     // 2: Latch clasp loop mesh
     // 3..47: 45 Glass slides
@@ -156,6 +157,7 @@ export class TrophyBoxRenderer {
   }
 
   _createGeometries() {
+    this.floorMesh = this._uploadMesh(buildFloorMesh());
     this.baseMesh = this._uploadMesh(buildBaseMesh());
     this.lidMesh = this._uploadMesh(buildLidMesh());
     this.claspMesh = this._uploadMesh(buildLatchClaspMesh());
@@ -279,7 +281,47 @@ export class TrophyBoxRenderer {
       }
     ];
 
-    // 1. Opaque + Studio Floor Alpha Blend Pipeline (writes depth)
+    const alphaBlend = {
+      color: {
+        srcFactor: 'src-alpha',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add'
+      },
+      alpha: {
+        srcFactor: 'one',
+        dstFactor: 'one-minus-src-alpha',
+        operation: 'add'
+      }
+    };
+
+    // 0. Studio Floor Shadow Pipeline (drawn first, depthWriteEnabled: false so reflection depth pre-pass works cleanly)
+    this.floorPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers
+      },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format, blend: alphaBlend }]
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none'
+      },
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'less-equal',
+        format: 'depth24plus'
+      },
+      multisample: {
+        count: this.sampleCount
+      }
+    });
+
+    // 1. Opaque Solid Box Pipeline (writes depth)
     this.solidPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
@@ -290,23 +332,7 @@ export class TrophyBoxRenderer {
       fragment: {
         module: shaderModule,
         entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
-          }
-        ]
+        targets: [{ format: this.format, blend: alphaBlend }]
       },
       primitive: {
         topology: 'triangle-list',
@@ -322,7 +348,7 @@ export class TrophyBoxRenderer {
       }
     });
 
-    // 2. Transparent Glass Slide Pipeline (sorted back-to-front, depth test on, depth write on for crisp blood drops)
+    // 2. Transparent Glass Slide Pipeline (sorted back-to-front)
     this.glassPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
@@ -333,23 +359,7 @@ export class TrophyBoxRenderer {
       fragment: {
         module: shaderModule,
         entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
-          }
-        ]
+        targets: [{ format: this.format, blend: alphaBlend }]
       },
       primitive: {
         topology: 'triangle-list',
@@ -387,15 +397,7 @@ export class TrophyBoxRenderer {
       fragment: {
         module: shaderModule,
         entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
-            }
-          }
-        ]
+        targets: [{ format: this.format, blend: alphaBlend }]
       },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: { depthWriteEnabled: false, depthCompare: 'equal', format: 'depth24plus' },
@@ -463,7 +465,7 @@ export class TrophyBoxRenderer {
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
 
     // 2. Write Object Uniforms:
-    // Slot 0: Base
+    // Slot 0: Base (and Floor)
     this._writeObjectUniform(0, sceneState.baseMatrix, -1, 0, 0, 0);
     // Slot 1: Lid
     this._writeObjectUniform(1, sceneState.lidMatrix, -1, 0, 0, 0);
@@ -530,8 +532,14 @@ export class TrophyBoxRenderer {
 
     renderPass.setBindGroup(0, this.sceneBindGroup);
 
-    // Floor reflection: depth pre-pass, then faded color on the nearest reflected surfaces.
-    // The (semi-transparent) floor shadow and the real box are drawn on top afterwards.
+    // Pass 1: Studio Floor Ambient & Lateral Shadows (does not write depth)
+    renderPass.setPipeline(this.floorPipeline);
+    renderPass.setBindGroup(1, this.objectBindGroup, [0 * OBJECT_UNIFORM_STRIDE]);
+    renderPass.setVertexBuffer(0, this.floorMesh.vbo);
+    renderPass.setIndexBuffer(this.floorMesh.ibo, 'uint32');
+    renderPass.drawIndexed(this.floorMesh.indexCount);
+
+    // Pass 2: Glossy Mirrored Floor Reflection (depth pre-pass + faded/blurred color pass)
     const reflMeshes = [this.baseMesh, this.lidMesh, this.claspMesh];
     for (const pipeline of [this.reflDepthPipeline, this.reflColorPipeline]) {
       renderPass.setPipeline(pipeline);
@@ -543,7 +551,7 @@ export class TrophyBoxRenderer {
       }
     }
 
-    // Draw Solid Meshes (Base, Lid, Latch Clasp)
+    // Pass 3: Solid Meshes (Base, Lid, Latch Clasp)
     renderPass.setPipeline(this.solidPipeline);
 
     // Base (Slot 0)
@@ -564,7 +572,7 @@ export class TrophyBoxRenderer {
     renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
     renderPass.drawIndexed(this.claspMesh.indexCount);
 
-    // Draw 45 Glass Slides sorted back-to-front
+    // Pass 4: 45 Glass Slides sorted back-to-front
     renderPass.setPipeline(this.glassPipeline);
     renderPass.setVertexBuffer(0, this.slideMesh.vbo);
     renderPass.setIndexBuffer(this.slideMesh.ibo, 'uint32');

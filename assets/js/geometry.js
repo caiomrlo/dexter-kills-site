@@ -76,6 +76,24 @@ class MeshBuilder {
   }
 
   /**
+   * Adds a triangle with automatic normal calculation
+   */
+  addFaceTri(p0, p1, p2, uv0, uv1, uv2, matId, extra = 0) {
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len; ny /= len; nz /= len;
+
+    const i0 = this.addVertex(p0[0], p0[1], p0[2], nx, ny, nz, uv0[0], uv0[1], matId, extra);
+    const i1 = this.addVertex(p1[0], p1[1], p1[2], nx, ny, nz, uv1[0], uv1[1], matId, extra);
+    const i2 = this.addVertex(p2[0], p2[1], p2[2], nx, ny, nz, uv2[0], uv2[1], matId, extra);
+    this.addTri(i0, i1, i2);
+  }
+
+  /**
    * Adds an axis-aligned box from [minX, minY, minZ] to [maxX, maxY, maxZ]
    */
   addBox(minX, minY, minZ, maxX, maxY, maxZ, matId, extra = 0) {
@@ -121,17 +139,11 @@ class MeshBuilder {
     const z0 = minZ, z1 = minZ + b, z2 = maxZ - b, z3 = maxZ;
 
     // Main 6 faces (inset by bevel)
-    // Top
     this.addFace([x1, y3, z2], [x2, y3, z2], [x2, y3, z1], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Bottom
     this.addFace([x1, y0, z1], [x2, y0, z1], [x2, y0, z2], [x1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Front (+Z)
     this.addFace([x1, y1, z3], [x2, y1, z3], [x2, y2, z3], [x1, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Back (-Z)
     this.addFace([x2, y1, z0], [x1, y1, z0], [x1, y2, z0], [x2, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Right (+X)
     this.addFace([x3, y1, z2], [x3, y1, z1], [x3, y2, z1], [x3, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
-    // Left (-X)
     this.addFace([x0, y1, z1], [x0, y1, z2], [x0, y2, z2], [x0, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
 
     // 4 Top bevels
@@ -152,56 +164,189 @@ class MeshBuilder {
     this.addFace([x1, y1, z0], [x0, y1, z1], [x0, y2, z1], [x1, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
     this.addFace([x0, y1, z2], [x1, y1, z3], [x1, y2, z3], [x0, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
 
-    // 8 Corner triangles (top 4, bottom 4)
-    const addCornerTri = (p0, p1, p2) => {
-      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
-      const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
-      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      nx /= len; ny /= len; nz /= len;
-      const i0 = this.addVertex(p0[0], p0[1], p0[2], nx, ny, nz, 0, 0, matId, extra);
-      const i1 = this.addVertex(p1[0], p1[1], p1[2], nx, ny, nz, 1, 0, matId, extra);
-      const i2 = this.addVertex(p2[0], p2[1], p2[2], nx, ny, nz, 0.5, 1, matId, extra);
-      this.addTri(i0, i1, i2);
-    };
+    // 8 Corner triangles
+    this.addFaceTri([x2, y2, z3], [x3, y2, z2], [x2, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x3, y2, z1], [x2, y2, z0], [x2, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y2, z0], [x0, y2, z1], [x1, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y2, z2], [x1, y2, z3], [x1, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
 
-    // Top corners
-    addCornerTri([x2, y2, z3], [x3, y2, z2], [x2, y3, z2]);
-    addCornerTri([x3, y2, z1], [x2, y2, z0], [x2, y3, z1]);
-    addCornerTri([x1, y2, z0], [x0, y2, z1], [x1, y3, z1]);
-    addCornerTri([x0, y2, z2], [x1, y2, z3], [x1, y3, z2]);
-
-    // Bottom corners
-    addCornerTri([x3, y1, z2], [x2, y1, z3], [x2, y0, z2]);
-    addCornerTri([x2, y1, z0], [x3, y1, z1], [x2, y0, z1]);
-    addCornerTri([x0, y1, z1], [x1, y1, z0], [x1, y0, z1]);
-    addCornerTri([x1, y1, z3], [x0, y1, z2], [x1, y0, z2]);
+    this.addFaceTri([x3, y1, z2], [x2, y1, z3], [x2, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x2, y1, z0], [x3, y1, z1], [x2, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y1, z1], [x1, y1, z0], [x1, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y1, z3], [x0, y1, z2], [x1, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
   }
 
   /**
-   * Adds a cylinder along Z or Y axis for screws, hinge barrels, and rounded brass tabs
+   * Builds a seamless, single-piece beveled outer box with an open top cavity (for the Base)
+   */
+  addSeamlessHollowBase(minX, minY, minZ, maxX, maxY, maxZ, wallThick, floorY, bevel, matId, extra = 0) {
+    const b = bevel;
+    const bTop = bevel * 0.50;
+    const x0 = minX, x1 = minX + b, x2 = maxX - b, x3 = maxX;
+    const y0 = minY, y1 = minY + b, y2 = maxY - bTop, y3 = maxY;
+    const z0 = minZ, z1 = minZ + b, z2 = maxZ - b, z3 = maxZ;
+
+    // Seamless Exterior Faces
+    this.addFace([x1, y0, z1], [x2, y0, z1], [x2, y0, z2], [x1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y1, z3], [x2, y1, z3], [x2, y2, z3], [x1, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y1, z0], [x1, y1, z0], [x1, y2, z0], [x2, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y1, z2], [x3, y1, z1], [x3, y2, z1], [x3, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y1, z1], [x0, y1, z2], [x0, y2, z2], [x0, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Top outer bevels
+    this.addFace([x1, y2, z3], [x2, y2, z3], [x2, y3, z2], [x1, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y2, z0], [x1, y2, z0], [x1, y3, z1], [x2, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y2, z2], [x3, y2, z1], [x2, y3, z1], [x2, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y2, z1], [x0, y2, z2], [x1, y3, z2], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Bottom outer bevels
+    this.addFace([x1, y0, z2], [x2, y0, z2], [x2, y1, z3], [x1, y1, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y0, z1], [x1, y0, z1], [x1, y1, z0], [x2, y1, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y0, z2], [x2, y0, z1], [x3, y1, z1], [x3, y1, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y0, z1], [x1, y0, z2], [x0, y1, z2], [x0, y1, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Vertical corner bevels
+    this.addFace([x2, y1, z3], [x3, y1, z2], [x3, y2, z2], [x2, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y1, z1], [x2, y1, z0], [x2, y2, z0], [x3, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y1, z0], [x0, y1, z1], [x0, y2, z1], [x1, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y1, z2], [x1, y1, z3], [x1, y2, z3], [x0, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 8 Outer Corner Triangles
+    this.addFaceTri([x2, y2, z3], [x3, y2, z2], [x2, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x3, y2, z1], [x2, y2, z0], [x2, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y2, z0], [x0, y2, z1], [x1, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y2, z2], [x1, y2, z3], [x1, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+
+    this.addFaceTri([x3, y1, z2], [x2, y1, z3], [x2, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x2, y1, z0], [x3, y1, z1], [x2, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y1, z1], [x1, y1, z0], [x1, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y1, z3], [x0, y1, z2], [x1, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+
+    // Top Flat Rim & Inner Hollow Cavity
+    const ix0 = minX + wallThick;
+    const ix1 = maxX - wallThick;
+    const iz0 = minZ + wallThick;
+    const iz1 = maxZ - wallThick;
+
+    this.addFace([x1, y3, z2], [x2, y3, z2], [ix1, y3, iz1], [ix0, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y3, z1], [x1, y3, z1], [ix0, y3, iz0], [ix1, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y3, z1], [x1, y3, z2], [ix0, y3, iz1], [ix0, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y3, z2], [x2, y3, z1], [ix1, y3, iz0], [ix1, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    this.addFace([ix1, floorY, iz1], [ix0, floorY, iz1], [ix0, y3, iz1], [ix1, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix0, floorY, iz0], [ix1, floorY, iz0], [ix1, y3, iz0], [ix0, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix0, floorY, iz1], [ix0, floorY, iz0], [ix0, y3, iz0], [ix0, y3, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix1, floorY, iz0], [ix1, floorY, iz1], [ix1, y3, iz1], [ix1, y3, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+  }
+
+  /**
+   * Builds a seamless, single-piece beveled outer lid with an open bottom cavity (for the Lid)
+   */
+  addSeamlessHollowLid(minX, minY, minZ, maxX, maxY, maxZ, wallThick, ceilingY, bevel, matId, extra = 0) {
+    const b = bevel;
+    const bBot = bevel * 0.50;
+    const x0 = minX, x1 = minX + b, x2 = maxX - b, x3 = maxX;
+    const y0 = minY, y1 = minY + bBot, y2 = maxY - b, y3 = maxY;
+    const z0 = minZ, z1 = minZ + b, z2 = maxZ - b, z3 = maxZ;
+
+    // Seamless Exterior Faces
+    this.addFace([x1, y3, z2], [x2, y3, z2], [x2, y3, z1], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y1, z3], [x2, y1, z3], [x2, y2, z3], [x1, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y1, z0], [x1, y1, z0], [x1, y2, z0], [x2, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y1, z2], [x3, y1, z1], [x3, y2, z1], [x3, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y1, z1], [x0, y1, z2], [x0, y2, z2], [x0, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Top prominent bevels
+    this.addFace([x1, y2, z3], [x2, y2, z3], [x2, y3, z2], [x1, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y2, z0], [x1, y2, z0], [x1, y3, z1], [x2, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y2, z2], [x3, y2, z1], [x2, y3, z1], [x2, y3, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y2, z1], [x0, y2, z2], [x1, y3, z2], [x1, y3, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Bottom outer bevels
+    this.addFace([x1, y0, z2], [x2, y0, z2], [x2, y1, z3], [x1, y1, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y0, z1], [x1, y0, z1], [x1, y1, z0], [x2, y1, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x2, y0, z2], [x2, y0, z1], [x3, y1, z1], [x3, y1, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y0, z1], [x1, y0, z2], [x0, y1, z2], [x0, y1, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 4 Vertical corner bevels
+    this.addFace([x2, y1, z3], [x3, y1, z2], [x3, y2, z2], [x2, y2, z3], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x3, y1, z1], [x2, y1, z0], [x2, y2, z0], [x3, y2, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x1, y1, z0], [x0, y1, z1], [x0, y2, z1], [x1, y2, z0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([x0, y1, z2], [x1, y1, z3], [x1, y2, z3], [x0, y2, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    // 8 Outer Corner Triangles
+    this.addFaceTri([x2, y2, z3], [x3, y2, z2], [x2, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x3, y2, z1], [x2, y2, z0], [x2, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y2, z0], [x0, y2, z1], [x1, y3, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y2, z2], [x1, y2, z3], [x1, y3, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+
+    this.addFaceTri([x3, y1, z2], [x2, y1, z3], [x2, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x2, y1, z0], [x3, y1, z1], [x2, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x0, y1, z1], [x1, y1, z0], [x1, y0, z1], [0, 0], [1, 0], [0.5, 1], matId, extra);
+    this.addFaceTri([x1, y1, z3], [x0, y1, z2], [x1, y0, z2], [0, 0], [1, 0], [0.5, 1], matId, extra);
+
+    // Bottom Flat Rim & Inner Hollow Cavity
+    const ix0 = minX + wallThick;
+    const ix1 = maxX - wallThick;
+    const iz0 = minZ + wallThick;
+    const iz1 = maxZ - wallThick;
+
+    this.addFace([ix0, y0, iz1], [ix1, y0, iz1], [x2, y0, z2], [x1, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix1, y0, iz0], [ix0, y0, iz0], [x1, y0, z1], [x2, y0, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix0, y0, iz0], [ix0, y0, iz1], [x1, y0, z2], [x1, y0, z1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix1, y0, iz1], [ix1, y0, iz0], [x2, y0, z1], [x2, y0, z2], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+
+    this.addFace([ix0, y0, iz1], [ix1, y0, iz1], [ix1, ceilingY, iz1], [ix0, ceilingY, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix1, y0, iz0], [ix0, y0, iz0], [ix0, ceilingY, iz0], [ix1, ceilingY, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix0, y0, iz0], [ix0, y0, iz1], [ix0, ceilingY, iz1], [ix0, ceilingY, iz0], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+    this.addFace([ix1, y0, iz1], [ix1, y0, iz0], [ix1, ceilingY, iz0], [ix1, ceilingY, iz1], [0, 0], [1, 0], [1, 1], [0, 1], matId, extra);
+  }
+
+  /**
+   * Adds a cylinder/disk along Z axis with beveled rim for screws and rounded brass tabs
    */
   addDiskZ(cx, cy, z0, z1, radius, segments, matId, extra = 0, halfAngleStart = 0, halfAngleEnd = Math.PI * 2) {
+    const bev = Math.min(0.004, (z1 - z0) * 0.35);
+    const rInner = Math.max(0.002, radius - bev);
+    const zFront = z1;
+    const zMid = z1 - bev;
+
     const startIdxFront = this.vertexCount;
-    this.addVertex(cx, cy, z1, 0, 0, 1, 0.5, 0.5, matId, extra);
+    this.addVertex(cx, cy, zFront, 0, 0, 1, 0.5, 0.5, matId, extra);
     for (let i = 0; i <= segments; i++) {
       const a = halfAngleStart + (i / segments) * (halfAngleEnd - halfAngleStart);
-      const x = cx + Math.cos(a) * radius;
-      const y = cy + Math.sin(a) * radius;
-      this.addVertex(x, y, z1, 0, 0, 1, 0.5 + 0.5 * Math.cos(a), 0.5 + 0.5 * Math.sin(a), matId, extra);
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const x = cx + ca * rInner;
+      const y = cy + sa * rInner;
+      this.addVertex(x, y, zFront, 0, 0, 1, 0.5 + 0.5 * ca, 0.5 + 0.5 * sa, matId, extra);
       if (i > 0) {
         this.addTri(startIdxFront, startIdxFront + i, startIdxFront + i + 1);
       }
     }
 
-    // Rim
+    // Beveled front edge + outer cylindrical rim
     for (let i = 0; i < segments; i++) {
       const a0 = halfAngleStart + (i / segments) * (halfAngleEnd - halfAngleStart);
       const a1 = halfAngleStart + ((i + 1) / segments) * (halfAngleEnd - halfAngleStart);
-      const x0 = cx + Math.cos(a0) * radius, y0 = cy + Math.sin(a0) * radius;
-      const x1 = cx + Math.cos(a1) * radius, y1 = cy + Math.sin(a1) * radius;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0);
+      const c1 = Math.cos(a1), s1 = Math.sin(a1);
+
+      const ix0 = cx + c0 * rInner, iy0 = cy + s0 * rInner;
+      const ix1 = cx + c1 * rInner, iy1 = cy + s1 * rInner;
+      const ox0 = cx + c0 * radius, oy0 = cy + s0 * radius;
+      const ox1 = cx + c1 * radius, oy1 = cy + s1 * radius;
+
       this.addFace(
-        [x0, y0, z0], [x0, y0, z1], [x1, y1, z1], [x1, y1, z0],
+        [ox0, oy0, zMid], [ix0, iy0, zFront], [ix1, iy1, zFront], [ox1, oy1, zMid],
+        [0.5 + 0.5 * c0, 0.5 + 0.5 * s0],
+        [0.5 + 0.45 * c0, 0.5 + 0.45 * s0],
+        [0.5 + 0.45 * c1, 0.5 + 0.45 * s1],
+        [0.5 + 0.5 * c1, 0.5 + 0.5 * s1],
+        matId, extra
+      );
+
+      this.addFace(
+        [ox0, oy0, z0], [ox0, oy0, zMid], [ox1, oy1, zMid], [ox1, oy1, z0],
         [0, 0], [1, 0], [1, 1], [0, 1], matId, extra
       );
     }
@@ -217,12 +362,24 @@ class MeshBuilder {
 }
 
 /**
- * 1. Build Static Base Mesh:
- * - Studio shadow plane
- * - Hollow mahogany base with beveled exterior walls
- * - Slotted cream-wood racks along left & right inner walls (45 slots)
- * - Lower front brass latch plate with rounded bottom tab, screws & catch post
- * - Rear brass hinge lower barrels
+ * 0. Build Studio Floor Mesh (separate from Base so floor shadow & reflection compose cleanly)
+ */
+export function buildFloorMesh() {
+  const mb = new MeshBuilder();
+  const floorSize = 16.0;
+  mb.addFace(
+    [-floorSize, -0.001, floorSize],
+    [floorSize, -0.001, floorSize],
+    [floorSize, -0.001, -floorSize],
+    [-floorSize, -0.001, -floorSize],
+    [-1, -1], [1, -1], [1, 1], [-1, 1],
+    MATERIAL.FLOOR, 0
+  );
+  return mb.toTypedArrays();
+}
+
+/**
+ * 1. Build Static Base Mesh
  */
 export function buildBaseMesh() {
   const mb = new MeshBuilder();
@@ -230,32 +387,12 @@ export function buildBaseMesh() {
   const hl = BOX_SPECS.length / 2;    // 2.60
   const bh = BOX_SPECS.baseHeight;    // 0.42
   const wt = BOX_SPECS.wallThick;     // 0.17
-  const bev = 0.026;
+  const bev = 0.028;
 
-  // Studio floor plane (for subtle soft contact shadow)
-  const floorSize = 14.0;
-  mb.addFace(
-    [-floorSize, -0.002, floorSize],
-    [floorSize, -0.002, floorSize],
-    [floorSize, -0.002, -floorSize],
-    [-floorSize, -0.002, -floorSize],
-    [-1, -1], [1, -1], [1, 1], [-1, 1],
-    MATERIAL.FLOOR, 0
-  );
+  // Seamless Outer Mahogany Base Shell
+  mb.addSeamlessHollowBase(-hw, 0.0, -hl, hw, bh, hl, wt, 0.09, bev, MATERIAL.WOOD, 0.0);
 
-  // Outer Mahogany Base: 4 walls + floor so interior is authentically hollow
-  // Left wall (-X)
-  mb.addBeveledBox(-hw, 0.0, -hl, -hw + wt, bh, hl, bev, MATERIAL.WOOD, 0.0);
-  // Right wall (+X)
-  mb.addBeveledBox(hw - wt, 0.0, -hl, hw, bh, hl, bev, MATERIAL.WOOD, 0.0);
-  // Front wall (+Z)
-  mb.addBeveledBox(-hw + wt - 0.02, 0.0, hl - wt, hw - wt + 0.02, bh, hl, bev, MATERIAL.WOOD, 0.0);
-  // Back wall (-Z)
-  mb.addBeveledBox(-hw + wt - 0.02, 0.0, -hl, hw - wt + 0.02, bh, -hl + wt, bev, MATERIAL.WOOD, 0.0);
-  // Base bottom floor slab
-  mb.addBox(-hw + wt * 0.5, 0.01, -hl + wt * 0.5, hw - wt * 0.5, 0.09, hl - wt * 0.5, MATERIAL.WOOD, 0.0);
-
-  // Inner cream floor lining (under the slides so red blood drops pop like in reference photo 2)
+  // Inner cream floor lining
   const innerX = hw - wt; // 0.79
   const innerZ = hl - wt; // 2.43
   mb.addBox(-innerX, 0.09, -innerZ, innerX, 0.115, innerZ, MATERIAL.RACK, 0.2);
@@ -265,11 +402,9 @@ export function buildBaseMesh() {
   const rackTopY = bh - 0.025;       // 0.395
   const rackBaseY = 0.115;
 
-  // Continuous backing strip of the rack against the wood wall
   mb.addBox(-innerX, rackBaseY, -innerZ, -innerX + rackW * 0.42, rackTopY, innerZ, MATERIAL.RACK, 0.0);
   mb.addBox(innerX - rackW * 0.42, rackBaseY, -innerZ, innerX, rackTopY, innerZ, MATERIAL.RACK, 0.0);
 
-  // 46 separator teeth creating 45 slots along Z
   const numSlots = BOX_SPECS.numSlides;
   const usableZ = (innerZ - 0.08) * 2;
   const stepZ = usableZ / numSlots;
@@ -280,33 +415,37 @@ export function buildBaseMesh() {
     const zCenter = startZ + i * stepZ;
     const z0 = zCenter - toothThick / 2;
     const z1 = zCenter + toothThick / 2;
-    // Left tooth
     mb.addBox(-innerX + rackW * 0.4, rackBaseY, z0, -innerX + rackW, rackTopY, z1, MATERIAL.RACK, 1.0);
-    // Right tooth
     mb.addBox(innerX - rackW, rackBaseY, z0, innerX - rackW * 0.4, rackTopY, z1, MATERIAL.RACK, 1.0);
   }
 
-  // Front Lower Brass Latch Assembly (+Z = hl)
-  const latchW = 0.23;
-  const latchZ0 = hl - 0.005;
-  const latchZ1 = hl + 0.022;
-  // Main rectangular lower brass plate
-  mb.addBeveledBox(-latchW, 0.15, latchZ0, latchW, bh - 0.012, latchZ1, 0.006, MATERIAL.BRASS, 0.0);
-  // Rounded bottom semicircular brass tab (matching Image 1 bottom-left)
-  mb.addDiskZ(0, 0.15, latchZ0, latchZ1, 0.155, 18, MATERIAL.BRASS, 0.0, Math.PI, Math.PI * 2);
+  // ============================================================================
+  // FRONT LOWER BRASS LATCH ASSEMBLY (+Z = hl) — Matching Reference Image
+  // ============================================================================
+  const latchW = 0.232;
+  const latchZ0 = hl - 0.004;
+  const latchZ1 = hl + 0.020;
 
-  // Two brass screws on lower plate (left & right)
-  mb.addDiskZ(-0.16, 0.27, latchZ1, latchZ1 + 0.012, 0.028, 12, MATERIAL.BRASS, 2.0);
-  mb.addDiskZ(0.16, 0.27, latchZ1, latchZ1 + 0.012, 0.028, 12, MATERIAL.BRASS, 2.0);
+  // 1. Main rectangular lower brass plate (extra = 0.0)
+  mb.addBeveledBox(-latchW, 0.156, latchZ0, latchW, bh - 0.010, latchZ1, 0.007, MATERIAL.BRASS, 0.0);
 
-  // Central raised turn-catch / loop post on lower plate
-  mb.addBeveledBox(-0.045, 0.20, latchZ1, 0.045, 0.34, latchZ1 + 0.042, 0.008, MATERIAL.BRASS, 1.0);
-  // Lower hanging brass catch loop (visible in Image 1 & 2)
-  mb.addBeveledBox(-0.068, 0.08, latchZ1 + 0.008, -0.042, 0.26, latchZ1 + 0.028, 0.005, MATERIAL.BRASS, 1.0);
-  mb.addBeveledBox(0.042, 0.08, latchZ1 + 0.008, 0.068, 0.26, latchZ1 + 0.028, 0.005, MATERIAL.BRASS, 1.0);
-  mb.addBeveledBox(-0.068, 0.065, latchZ1 + 0.008, 0.068, 0.095, latchZ1 + 0.028, 0.005, MATERIAL.BRASS, 1.0);
+  // 2. Rounded bottom semicircular brass tab (extra = 4.0: reaches down to y = 0.004)
+  mb.addDiskZ(0, 0.156, latchZ0, latchZ1, 0.152, 28, MATERIAL.BRASS, 4.0, Math.PI, Math.PI * 2);
 
-  // Back Brass Hinges (2 hinges at X = -0.52 and X = +0.52)
+  // 3. Two countersunk Phillips brass screws on lower plate (extra = 2.0)
+  mb.addDiskZ(-0.150, 0.282, latchZ1 - 0.002, latchZ1 + 0.010, 0.025, 20, MATERIAL.BRASS, 2.0);
+  mb.addDiskZ(0.150, 0.282, latchZ1 - 0.002, latchZ1 + 0.010, 0.025, 20, MATERIAL.BRASS, 2.0);
+
+  // 4. Lower central catch staple / keeper block & side guide rails
+  mb.addBeveledBox(-0.062, 0.130, latchZ1 - 0.002, -0.036, 0.405, latchZ1 + 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  mb.addBeveledBox(0.036, 0.130, latchZ1 - 0.002, 0.062, 0.405, latchZ1 + 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  // Central raised keeper post
+  mb.addBeveledBox(-0.034, 0.220, latchZ1, 0.034, 0.352, latchZ1 + 0.042, 0.006, MATERIAL.BRASS, 1.0);
+  // Lower horizontal bridge bar & bottom tab lip receiver
+  mb.addBeveledBox(-0.062, 0.112, latchZ1 - 0.002, 0.062, 0.156, latchZ1 + 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  mb.addBeveledBox(-0.048, 0.066, latchZ1 - 0.002, 0.048, 0.114, latchZ1 + 0.018, 0.005, MATERIAL.BRASS, 1.0);
+
+  // Back Brass Hinges
   const hingeXs = [-0.52, 0.52];
   for (const hx of hingeXs) {
     mb.addBox(hx - 0.13, bh - 0.06, -hl - 0.012, hx + 0.13, bh + 0.01, -hl + wt, MATERIAL.BRASS, 1.0);
@@ -316,11 +455,7 @@ export function buildBaseMesh() {
 }
 
 /**
- * 2. Build Pivoting Lid Mesh in Local Hinge Space:
- * Origin (0, 0, 0) in Lid Local Space is at the Hinge Axis: World (0, BOX_SPECS.hingeY, BOX_SPECS.hingeZ)
- * So when lidAngle = 0:
- * - Z_local runs from 0.0 (back edge) to +5.20 (front edge)
- * - Y_local runs from 0.0 (bottom rim of lid) to +0.36 (top surface of lid)
+ * 2. Build Pivoting Lid Mesh in Local Hinge Space
  */
 export function buildLidMesh() {
   const mb = new MeshBuilder();
@@ -328,33 +463,23 @@ export function buildLidMesh() {
   const L = BOX_SPECS.length;         // 5.20
   const lh = BOX_SPECS.lidHeight;     // 0.36
   const wt = BOX_SPECS.wallThick;     // 0.17
-  const bev = 0.026;
+  const bev = 0.028;
 
-  // Hollow lid frame so the recessed numbered index card sits inside when opened!
-  // Top roof panel
-  mb.addBeveledBox(-hw, lh - 0.09, 0.0, hw, lh, L, bev, MATERIAL.WOOD, 0.0);
-  // Left rim (-X)
-  mb.addBeveledBox(-hw, 0.0, 0.0, -hw + wt, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
-  // Right rim (+X)
-  mb.addBeveledBox(hw - wt, 0.0, 0.0, hw, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
-  // Front rim (+Z = L)
-  mb.addBeveledBox(-hw + wt - 0.02, 0.0, L - wt, hw - wt + 0.02, lh - 0.05, L, bev, MATERIAL.WOOD, 0.0);
-  // Back rim (Z = 0)
-  mb.addBeveledBox(-hw + wt - 0.02, 0.0, 0.0, hw - wt + 0.02, lh - 0.05, wt, bev, MATERIAL.WOOD, 0.0);
+  // Seamless Outer Mahogany Lid Shell
+  mb.addSeamlessHollowLid(-hw, 0.0, 0.0, hw, lh, L, wt, lh - 0.09, bev, MATERIAL.WOOD, 0.0);
 
   // Recessed Inner Cream Border Frame around Index Card
   const innerX = hw - wt;
   const cardMargin = 0.04;
   mb.addBox(-innerX, lh - 0.11, wt, innerX, lh - 0.085, L - wt, MATERIAL.RACK, 0.3);
 
-  // White Numbered Index Card on the underside of the lid (faces -Y when closed, faces forward/viewer when open!)
+  // White Numbered Index Card on the underside of the lid
   const cX0 = -innerX + cardMargin;
   const cX1 = innerX - cardMargin;
   const cZ0 = wt + cardMargin;
   const cZ1 = L - wt - cardMargin;
   const cardY = lh - 0.112;
 
-  // Bottom face of the card (normal pointing -Y in local lid space, which rotates to face +Z/+Y when lid opens!)
   mb.addFace(
     [cX0, cardY, cZ0],
     [cX1, cardY, cZ0],
@@ -364,21 +489,26 @@ export function buildLidMesh() {
     MATERIAL.INDEX_CARD, 0.0
   );
 
-  // Upper Brass Latch Plate on front of Lid (Z_local = L)
-  const latchW = 0.23;
-  const latchZ0 = L - 0.005;
-  const latchZ1 = L + 0.022;
-  // Upper plate body
-  mb.addBeveledBox(-latchW, 0.012, latchZ0, latchW, 0.21, latchZ1, 0.006, MATERIAL.BRASS, 0.0);
-  // Rounded top semicircular brass tab (matching Image 1 bottom-left)
-  mb.addDiskZ(0, 0.21, latchZ0, latchZ1, 0.155, 18, MATERIAL.BRASS, 0.0, 0, Math.PI);
+  // ============================================================================
+  // UPPER BRASS LATCH PLATE ON FRONT OF LID (Z_local = L)
+  // ============================================================================
+  const latchW = 0.232;
+  const latchZ0 = L - 0.004;
+  const latchZ1 = L + 0.020;
 
-  // Two brass screws on upper plate
-  mb.addDiskZ(-0.16, 0.10, latchZ1, latchZ1 + 0.012, 0.028, 12, MATERIAL.BRASS, 2.0);
-  mb.addDiskZ(0.16, 0.10, latchZ1, latchZ1 + 0.012, 0.028, 12, MATERIAL.BRASS, 2.0);
+  // 1. Upper rectangular plate body (extra = 0.0)
+  mb.addBeveledBox(-latchW, 0.010, latchZ0, latchW, 0.205, latchZ1, 0.007, MATERIAL.BRASS, 0.0);
 
-  // Upper central clasp bracket
-  mb.addBeveledBox(-0.052, 0.02, latchZ1, 0.052, 0.18, latchZ1 + 0.036, 0.007, MATERIAL.BRASS, 1.0);
+  // 2. Rounded top semicircular brass tab (extra = 3.0)
+  mb.addDiskZ(0, 0.205, latchZ0, latchZ1, 0.152, 28, MATERIAL.BRASS, 3.0, 0, Math.PI);
+
+  // 3. Two countersunk Phillips brass screws on upper plate (extra = 2.0)
+  mb.addDiskZ(-0.150, 0.104, latchZ1 - 0.002, latchZ1 + 0.010, 0.025, 20, MATERIAL.BRASS, 2.0);
+  mb.addDiskZ(0.150, 0.104, latchZ1 - 0.002, latchZ1 + 0.010, 0.025, 20, MATERIAL.BRASS, 2.0);
+
+  // 4. Upper central hinge block & stepped knuckle ribs
+  mb.addBeveledBox(-0.062, 0.145, latchZ1 - 0.002, 0.062, 0.206, latchZ1 + 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  mb.addBeveledBox(-0.042, 0.065, latchZ1, 0.042, 0.165, latchZ1 + 0.034, 0.005, MATERIAL.BRASS, 1.0);
 
   // Back Brass Hinge leaves attached to lid
   const hingeXs = [-0.52, 0.52];
@@ -391,24 +521,29 @@ export function buildLidMesh() {
 
 /**
  * 3. Build Swinging Brass Hasp Clasp Loop (pivots at front of lid to lock/unlock over the lower catch)
- * Local origin (0,0,0) at Lid Local (0, 0.08, L + 0.025)
  */
 export function buildLatchClaspMesh() {
   const mb = new MeshBuilder();
-  // Arched brass clasp bar that hooks downward over the lower catch when locked
-  mb.addBeveledBox(-0.078, -0.22, -0.01, -0.046, 0.02, 0.022, 0.005, MATERIAL.BRASS, 1.0);
-  mb.addBeveledBox(0.046, -0.22, -0.01, 0.078, 0.02, 0.022, 0.005, MATERIAL.BRASS, 1.0);
-  mb.addBeveledBox(-0.078, -0.24, -0.01, 0.078, -0.19, 0.022, 0.005, MATERIAL.BRASS, 1.0);
-  mb.addBeveledBox(-0.035, -0.14, 0.005, 0.035, 0.03, 0.032, 0.005, MATERIAL.BRASS, 1.0);
+  // Upper hinge barrel & bridge
+  mb.addBeveledBox(-0.062, -0.03, -0.008, 0.062, 0.045, 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  // Central recessed tongue on upper hasp
+  mb.addBeveledBox(-0.035, -0.11, 0.002, 0.035, 0.035, 0.026, 0.005, MATERIAL.BRASS, 1.0);
+
+  // Left and Right sculpted vertical clasp rails
+  mb.addBeveledBox(-0.062, -0.255, -0.006, -0.035, -0.01, 0.020, 0.005, MATERIAL.BRASS, 1.0);
+  mb.addBeveledBox(0.035, -0.255, -0.006, 0.062, -0.01, 0.020, 0.005, MATERIAL.BRASS, 1.0);
+
+  // Horizontal stepped cross-bars below the keeper slot
+  mb.addBeveledBox(-0.062, -0.222, -0.006, 0.062, -0.180, 0.022, 0.005, MATERIAL.BRASS, 1.0);
+  mb.addBeveledBox(-0.058, -0.272, -0.005, 0.058, -0.225, 0.024, 0.005, MATERIAL.BRASS, 1.0);
+
+  // Curved / angled bottom finger pull-lip at the base of the clasp
+  mb.addBeveledBox(-0.050, -0.320, -0.002, 0.050, -0.270, 0.028, 0.005, MATERIAL.BRASS, 1.0);
   return mb.toTypedArrays();
 }
 
 /**
  * 4. Build Single Glass Slide Mesh centered at Local (0, 0, 0)
- * X in [-slideWidth/2, slideWidth/2]
- * Y in [-slideHeight/2, slideHeight/2]
- * Z in [-slideThick/2, slideThick/2]
- * UV mapped [0..1, 0..1] so the shader renders the glass plate, beveled green glass edge, and volumetric blood drop!
  */
 export function buildSingleSlideMesh() {
   const mb = new MeshBuilder();
@@ -416,37 +551,31 @@ export function buildSingleSlideMesh() {
   const hh = BOX_SPECS.slideHeight / 2;
   const ht = BOX_SPECS.slideThick / 2;
 
-  // Front face (+Z) with UVs [0..1, 0..1]
   mb.addFace(
     [-hw, -hh, ht], [hw, -hh, ht], [hw, hh, ht], [-hw, hh, ht],
     [0, 0], [1, 0], [1, 1], [0, 1],
     MATERIAL.GLASS_SLIDE, 0.0
   );
-  // Back face (-Z) with UVs [0..1, 0..1]
   mb.addFace(
     [hw, -hh, -ht], [-hw, -hh, -ht], [-hw, hh, -ht], [hw, hh, -ht],
     [1, 0], [0, 0], [0, 1], [1, 1],
     MATERIAL.GLASS_SLIDE, 0.0
   );
-  // Top glass edge (+Y) - extra = 1.0 indicates frosted green glass edge
   mb.addFace(
     [-hw, hh, ht], [hw, hh, ht], [hw, hh, -ht], [-hw, hh, -ht],
     [0, 1], [1, 1], [1, 1], [0, 1],
     MATERIAL.GLASS_SLIDE, 1.0
   );
-  // Bottom glass edge (-Y)
   mb.addFace(
     [-hw, -hh, -ht], [hw, -hh, -ht], [hw, -hh, ht], [-hw, -hh, ht],
     [0, 0], [1, 0], [1, 0], [0, 0],
     MATERIAL.GLASS_SLIDE, 1.0
   );
-  // Right glass edge (+X)
   mb.addFace(
     [hw, -hh, ht], [hw, -hh, -ht], [hw, hh, -ht], [hw, hh, ht],
     [1, 0], [1, 0], [1, 1], [1, 1],
     MATERIAL.GLASS_SLIDE, 1.0
   );
-  // Left glass edge (-X)
   mb.addFace(
     [-hw, -hh, -ht], [-hw, -hh, ht], [-hw, hh, ht], [-hw, hh, -ht],
     [0, 0], [0, 0], [0, 1], [0, 1],
@@ -466,6 +595,5 @@ export function getSlideSlotZ(index) {
   const usableZ = (innerZ - 0.08) * 2;
   const stepZ = usableZ / BOX_SPECS.numSlides;
   const startZ = -innerZ + 0.08;
-  // Index 0 is at the front (+Z) like the close-up photo, index 44 is at the back (-Z)
   return startZ + (BOX_SPECS.numSlides - 0.5 - index) * stepZ;
 }
