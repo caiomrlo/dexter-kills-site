@@ -9,7 +9,7 @@ import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 
 // Initial / closed camera framing: straight-on front view (yaw 0) slightly above the box
-const CLOSED_VIEW = { yaw: 0.0, pitch: 0.25, distance: 7.9, center: [0.0, 0.20, 0.0] };
+const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
 
 class DexterBoxApp {
   constructor() {
