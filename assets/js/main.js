@@ -20,102 +20,102 @@ const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 
  * their respective slots inside the open Trophy Box as the user scrolls to Section 4.
  */
 const FLOATING_SLIDE_CONFIGS = [
-  // 1. Top-Left (medium distance, angled bottom-left to top-right)
+  // 1. Top-Left (partially outside top-left edge initially, slowly creeping into corner)
   {
     slotIndex: 0,
-    ndcX: -0.68,
-    ndcY: 0.60,
+    ndcX: -1.04,
+    ndcY: 0.84,
     depth: 6.4,
     rollZ: 0.60,
     tiltX: -0.36,
     tiltY: 0.44,
     driftX: 0.22,
     driftY: -0.14,
-    spinZ: -0.25,
+    spinZ: -0.16,
     phase: 0.0
   },
-  // 2. Mid-Left (further in background, smaller perspective, angled top-left to bottom-right)
+  // 2. Mid-Left (further in background, near outer left border, clear of center text)
   {
     slotIndex: 2,
-    ndcX: -0.72,
-    ndcY: -0.05,
-    depth: 11.2,
+    ndcX: -1.08,
+    ndcY: 0.14,
+    depth: 10.6,
     rollZ: -0.46,
     tiltX: 0.34,
     tiltY: 0.38,
-    driftX: 0.22,
-    driftY: 0.06,
-    spinZ: 0.22,
+    driftX: 0.24,
+    driftY: -0.06,
+    spinZ: 0.14,
     phase: 1.15
   },
-  // 3. Bottom-Left (close macro foreground slide at bottom-left corner, angled top-left to bottom-right)
+  // 3. Bottom-Left (close macro foreground slide tucked at bottom-left edge)
   {
     slotIndex: 4,
-    ndcX: -0.76,
-    ndcY: -0.68,
-    depth: 4.35,
+    ndcX: -1.05,
+    ndcY: -0.86,
+    depth: 4.5,
     rollZ: -0.50,
     tiltX: -0.32,
     tiltY: 0.40,
-    driftX: 0.26,
-    driftY: 0.22,
-    spinZ: 0.28,
+    driftX: 0.22,
+    driftY: 0.16,
+    spinZ: 0.18,
     phase: 2.35
   },
-  // 4. Top-Center (far background near top edge, angled bottom-left to top-right)
+  // 4. Top-Center-Left (high near top viewport border, stays well above headline text)
   {
     slotIndex: 6,
-    ndcX: -0.06,
-    ndcY: 0.90,
-    depth: 9.8,
+    ndcX: -0.24,
+    ndcY: 1.12,
+    depth: 9.4,
     rollZ: 0.65,
     tiltX: -0.38,
     tiltY: -0.30,
-    driftX: 0.04,
-    driftY: -0.26,
-    spinZ: -0.20,
+    driftX: 0.06,
+    driftY: -0.22,
+    spinZ: -0.14,
     phase: 3.50
   },
-  // 5. Top-Right (medium distance in upper-right corner, angled bottom-left to top-right)
+  // 5. Top-Right (partially outside upper-right corner initially, slowly emerging)
   {
     slotIndex: 8,
-    ndcX: 0.75,
-    ndcY: 0.70,
-    depth: 6.1,
+    ndcX: 1.05,
+    ndcY: 0.88,
+    depth: 6.2,
     rollZ: 0.62,
     tiltX: -0.35,
     tiltY: -0.42,
-    driftX: -0.24,
-    driftY: -0.18,
-    spinZ: -0.26,
+    driftX: -0.22,
+    driftY: -0.16,
+    spinZ: -0.16,
     phase: 4.65
   },
-  // 6. Mid-Right (hero foreground slide on right side, crisp & prominent, angled bottom-left to top-right)
+  // 6. Mid-Right (hero foreground slide on far right edge, creeps inward without touching text)
   {
     slotIndex: 10,
-    ndcX: 0.74,
-    ndcY: -0.16,
-    depth: 4.65,
+    ndcX: 1.06,
+    ndcY: -0.24,
+    depth: 4.75,
     rollZ: 0.66,
     tiltX: -0.34,
     tiltY: -0.46,
     driftX: -0.24,
-    driftY: 0.12,
-    spinZ: -0.30,
+    driftY: 0.08,
+    spinZ: -0.18,
     phase: 5.45
   },
-  // 7. Bottom-Right (deeper background near bottom-right corner, angled top-left to bottom-right)
+  // 7. Bottom-Right (deeper background tucked at bottom-right viewport corner)
   {
     slotIndex: 12,
-    ndcX: 0.86,
-    ndcY: -0.78,
-    depth: 9.2,
+    ndcX: 1.08,
+    ndcY: -0.92,
+    depth: 8.8,
     rollZ: -0.42,
     tiltX: 0.30,
     tiltY: -0.36,
-    driftX: -0.28,
-    driftY: 0.24,
-    spinZ: 0.20,
+    driftX: -0.22,
+    driftY: 0.18,
+    spinZ: 0.15,
     phase: 6.20
   }
 ];
@@ -578,25 +578,26 @@ class DexterBoxApp {
     const sProg = Math.min(1.0, Math.max(0.0, this.smoothScrollProgress));
 
     // Camera vertical lift & pitch transition across the 4 sections:
-    // During Sections 1..3 (sProg 0.0 -> 0.667), the camera is high above the Trophy Box
-    // so only the 7 floating blood slides are in view.
-    // As Section 4 enters (sProg 0.667 -> 1.0), the camera descends to frame the open Trophy Box.
+    // During Sections 1..3 (sProg 0.0 -> 0.72), the camera is high above the Trophy Box
+    // so only the 7 floating blood slides are in view around the viewport periphery.
+    // In the extended transition zone between Section 3 and Section 4 (sProg 0.72 -> 1.0),
+    // the camera descends to frame the open Trophy Box as the slides rapidly converge and slot in.
     let scrollLiftY = 0.0;
     let pitchOffset = 0.0;
     let yawOffset = 0.0;
 
-    if (sProg < 0.667) {
-      const t13 = sProg / 0.667; // 0 -> 1 across Sections 1, 2, 3
-      scrollLiftY = 20.0 - t13 * 10.2; // 20.0 -> 9.8
+    if (sProg < 0.72) {
+      const t13 = sProg / 0.72; // 0 -> 1 across Sections 1, 2, 3
+      scrollLiftY = 20.0 - t13 * 8.5; // 20.0 -> 11.5
       pitchOffset = -0.26; // Looking nearly horizontal into the dark studio space
       yawOffset = 0.0;
     } else {
-      const u4 = (sProg - 0.667) / 0.333; // 0 -> 1 as Section 4 enters viewport
+      const u4 = (sProg - 0.72) / 0.28; // 0 -> 1 in the space between Section 3 and Section 4
       const rem = 1.0 - Math.min(1.0, Math.max(0.0, u4));
       const easeRem = rem * rem * (0.65 + 0.35 * rem);
-      scrollLiftY = 9.8 * easeRem;
+      scrollLiftY = 11.5 * easeRem;
       pitchOffset = -0.26 * easeRem;
-      yawOffset = -0.28 * Math.sin(u4 * Math.PI) * (1.0 - u4 * 0.5);
+      yawOffset = -0.26 * Math.sin(u4 * Math.PI) * (1.0 - u4 * 0.5);
     }
 
     const effectiveTargetYaw = this.camera.targetYaw + yawOffset;
@@ -677,7 +678,8 @@ class DexterBoxApp {
 
     // 6. Update all 24 Glass Slides (including the 7 free-floating blood slides)
     const slideSmooth = 1.0 - Math.exp(-12.0 * dt);
-    const travel = Math.min(1.0, sProg / 0.68);
+    const travel = Math.min(1.0, sProg / 0.72);
+    // Gentle ease-in-out so slides emerge very subtly from viewport edges across Sections 1-3
     const travelSmooth = travel * travel * (3.0 - 2.0 * travel);
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
@@ -720,33 +722,34 @@ class DexterBoxApp {
       const cfg = s.floatCfg;
       const k = cfg.orderIdx; // 0..6
 
-      // Staggered entry window as the user scrolls from Section 3 into Section 4
-      const entryStart = 0.58 + k * 0.024;
-      const entryEnd = 0.87 + k * 0.020;
+      // Rapid, decisive entry window occurs after Section 3 text has scrolled up,
+      // inside the expanded transition space approaching Section 4 (Trophy Box)
+      const entryStart = 0.70 + k * 0.022;
+      const entryEnd = 0.88 + k * 0.018;
       const rawEntry = Math.min(1.0, Math.max(0.0, (sProg - entryStart) / (entryEnd - entryStart)));
 
-      // Horizontal & angular alignment finishes by rawEntry = 0.80 so the slide is 100% aligned
+      // Horizontal & angular alignment finishes by rawEntry = 0.78 so the slide is 100% aligned
       // directly above its slot before descending between the rack comb teeth
-      const rawAlign = Math.min(1.0, rawEntry / 0.80);
+      const rawAlign = Math.min(1.0, rawEntry / 0.78);
       const alignT = rawAlign * rawAlign * (3.0 - 2.0 * rawAlign);
       const rotWeight = 1.0 - alignT;
 
       // Vertical drop into the slot finishes at rawEntry = 1.0
-      const rawDrop = Math.min(1.0, Math.max(0.0, (rawEntry - 0.66) / 0.34));
+      const rawDrop = Math.min(1.0, Math.max(0.0, (rawEntry - 0.64) / 0.36));
       const dropT = rawDrop * rawDrop * (3.0 - 2.0 * rawDrop);
 
-      // Idle zero-gravity floating oscillation (damps out as slide aligns with box)
-      const idleX = Math.sin(timeSec * 1.15 + cfg.phase) * 0.016 * rotWeight;
-      const idleY = Math.cos(timeSec * 1.35 + cfg.phase * 1.3) * 0.022 * rotWeight;
-      const idleRoll = Math.sin(timeSec * 0.95 + cfg.phase) * 0.038 * rotWeight;
-      const idleTilt = Math.cos(timeSec * 1.10 + cfg.phase) * 0.028 * rotWeight;
+      // Idle zero-gravity floating oscillation (subtle, damps out as slide aligns with box)
+      const idleX = Math.sin(timeSec * 1.05 + cfg.phase) * 0.012 * rotWeight;
+      const idleY = Math.cos(timeSec * 1.25 + cfg.phase * 1.3) * 0.016 * rotWeight;
+      const idleRoll = Math.sin(timeSec * 0.90 + cfg.phase) * 0.028 * rotWeight;
+      const idleTilt = Math.cos(timeSec * 1.05 + cfg.phase) * 0.022 * rotWeight;
 
-      // Screen-relative trajectory across Sections 1 -> 2 -> 3
-      const swayX = Math.sin(sProg * Math.PI * 1.5 + cfg.phase) * 0.065 * travelSmooth;
-      const swayY = Math.cos(sProg * Math.PI * 1.2 + cfg.phase) * 0.065 * travelSmooth;
+      // Peripheral screen-relative trajectory across Sections 1 -> 2 -> 3 (stays clear of central text)
+      const swayX = Math.sin(sProg * Math.PI * 1.2 + cfg.phase) * 0.024 * travelSmooth;
+      const swayY = Math.cos(sProg * Math.PI * 1.0 + cfg.phase) * 0.024 * travelSmooth;
       const curNdcX = cfg.ndcX + cfg.driftX * travelSmooth + swayX + idleX;
       const curNdcY = cfg.ndcY + cfg.driftY * travelSmooth + swayY + idleY;
-      const curDepth = cfg.depth + (6.2 - cfg.depth) * travelSmooth * 0.42;
+      const curDepth = cfg.depth + (6.4 - cfg.depth) * travelSmooth * 0.28;
 
       const halfH = curDepth * tanHalfFov;
       const halfW = halfH * aspect;
@@ -797,7 +800,7 @@ class DexterBoxApp {
     this._updateKinematics(dt, timeSec);
 
     // Only draw the Trophy Box and stationary slides once approaching Section 4
-    const boxVisible = this.smoothScrollProgress > 0.52;
+    const boxVisible = this.smoothScrollProgress > 0.62;
 
     this.renderer.render({
       viewProjMatrix: this.viewProjMatrix,
