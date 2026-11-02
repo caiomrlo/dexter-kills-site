@@ -163,7 +163,7 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
   // MATERIAL 0: SEAMLESS STUDIO CYCLORAMA FLOOR + SOFT SHADOW
   // ==========================================================
   if (matId == 0) {
-    let boxHalf = vec2<f32>(0.95, 2.58);
+    let boxHalf = vec2<f32>(0.95, 1.48);
     let pXZ = in.worldPos.xz;
     let dBox = abs(pXZ) - boxHalf;
     let dist = length(max(dBox, vec2<f32>(0.0))) + min(max(dBox.x, dBox.y), 0.0);
@@ -174,7 +174,7 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
     let underBox = smoothstep(0.10, -0.05, dist) * 0.12;
 
     // Additional soft shadow behind the box when the lid opens backward
-    let lidRearDist = length((pXZ - vec2<f32>(0.0, -3.1)) * vec2<f32>(0.9, 0.7));
+    let lidRearDist = length((pXZ - vec2<f32>(0.0, -2.0)) * vec2<f32>(0.9, 0.7));
     let lidOpenShadow = scene.params.x * exp(-lidRearDist * 1.2) * 0.16;
 
     // Fade shadow out smoothly with radial distance so floor blends 100% into the CSS studio backdrop
@@ -281,7 +281,7 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
   }
 
   // ==========================================================
-  // MATERIAL 4: LID NUMBERED INDEX CARD (01 - 50)
+  // MATERIAL 4: LID NUMBERED INDEX CARD (01 - 24)
   // ==========================================================
   if (matId == 4) {
     let paperGrain = (noise3D(in.localPos * 60.0) - 0.5) * 0.02;
@@ -315,7 +315,7 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
   let aspect = 1.36 / 0.46;
   let p = (in.uv - vec2<f32>(0.5, 0.5)) * vec2<f32>(aspect, 1.0);
 
-  // Subtle organic variation per slide (1..45)
+  // Subtle organic variation per slide (1..24)
   let offsetX = sin(seed * 17.3) * 0.032;
   let offsetY = cos(seed * 29.1) * 0.020;
   let dp = p - vec2<f32>(offsetX, offsetY);
@@ -358,13 +358,13 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
     return vec4<f32>(finalBlood, bloodAlpha);
   }
 
-  // Crystal-clear microscope glass outside the blood drop so all 45 blood drops remain vividly visible!
+  // Crystal-clear microscope glass outside the blood drop so all 24 blood drops remain vividly visible!
   var glassColor = mix(vec3<f32>(0.88, 0.95, 0.92), env, 0.65) + vec3<f32>(specGlass);
   if (hoverAmt > 0.01 || selectAmt > 0.01) {
     glassColor = mix(glassColor, vec3<f32>(1.0, 0.90, 0.60), max(hoverAmt, selectAmt) * 0.40);
   }
 
-  // Very low base alpha on flat clear glass face so 45 stacked slides don't milk out the crimson column behind them
+  // Very low base alpha on flat clear glass face so 24 stacked slides don't milk out the crimson column behind them
   let glassAlpha = clamp(0.035 + fresnel * 0.14 + bevelRim * 0.38 + specGlass * 0.55 + max(hoverAmt, selectAmt) * 0.18, 0.035, 0.85);
   return vec4<f32>(glassColor, glassAlpha);
 }

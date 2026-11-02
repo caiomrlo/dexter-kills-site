@@ -8,7 +8,7 @@
  * 1 = Mahogany Wood (outer box & lid frames)
  * 2 = Polished Gold / Brass (latch plates, screws, clasp loop, hinges)
  * 3 = Slotted Cream Wood / Ivory Rack & Inner Lining
- * 4 = Lid Index Card (numbered 01-50 ruled chart)
+ * 4 = Lid Index Card (numbered 01-24 ruled chart)
  * 5 = Microscope Glass Slide (with central blood drop specimen)
  */
 
@@ -23,14 +23,14 @@ export const MATERIAL = {
 
 export const BOX_SPECS = {
   width: 1.92,       // X: [-0.96, 0.96]
-  length: 5.20,      // Z: [-2.60, 2.60] (+Z is front latch, -Z is back hinge)
+  length: 3.00,      // Z: [-1.50, 1.50] (+Z is front latch, -Z is back hinge)
   baseHeight: 0.42,  // Y: [0.00, 0.42]
   lidHeight: 0.36,   // Y: [0.42, 0.78] when closed
   wallThick: 0.17,
   rackThick: 0.13,
   hingeY: 0.42,
-  hingeZ: -2.60,
-  numSlides: 45,
+  hingeZ: -1.50,
+  numSlides: 24,
   slideWidth: 1.36,
   slideHeight: 0.46,
   slideThick: 0.020
@@ -220,14 +220,14 @@ class MeshBuilder {
  * 1. Build Static Base Mesh:
  * - Studio shadow plane
  * - Hollow mahogany base with beveled exterior walls
- * - Slotted cream-wood racks along left & right inner walls (45 slots)
+ * - Slotted cream-wood racks along left & right inner walls (24 slots)
  * - Lower front brass latch plate with rounded bottom tab, screws & catch post
  * - Rear brass hinge lower barrels
  */
 export function buildBaseMesh() {
   const mb = new MeshBuilder();
   const hw = BOX_SPECS.width / 2;     // 0.96
-  const hl = BOX_SPECS.length / 2;    // 2.60
+  const hl = BOX_SPECS.length / 2;    // 1.50
   const bh = BOX_SPECS.baseHeight;    // 0.42
   const wt = BOX_SPECS.wallThick;     // 0.17
   const bev = 0.026;
@@ -257,7 +257,7 @@ export function buildBaseMesh() {
 
   // Inner cream floor lining (under the slides so red blood drops pop like in reference photo 2)
   const innerX = hw - wt; // 0.79
-  const innerZ = hl - wt; // 2.43
+  const innerZ = hl - wt; // 1.33
   mb.addBox(-innerX, 0.09, -innerZ, innerX, 0.115, innerZ, MATERIAL.RACK, 0.2);
 
   // Slotted Comb Racks along Left and Right inner walls
@@ -269,7 +269,7 @@ export function buildBaseMesh() {
   mb.addBox(-innerX, rackBaseY, -innerZ, -innerX + rackW * 0.42, rackTopY, innerZ, MATERIAL.RACK, 0.0);
   mb.addBox(innerX - rackW * 0.42, rackBaseY, -innerZ, innerX, rackTopY, innerZ, MATERIAL.RACK, 0.0);
 
-  // 46 separator teeth creating 45 slots along Z
+  // 25 separator teeth creating 24 slots along Z
   const numSlots = BOX_SPECS.numSlides;
   const usableZ = (innerZ - 0.08) * 2;
   const stepZ = usableZ / numSlots;
@@ -319,13 +319,13 @@ export function buildBaseMesh() {
  * 2. Build Pivoting Lid Mesh in Local Hinge Space:
  * Origin (0, 0, 0) in Lid Local Space is at the Hinge Axis: World (0, BOX_SPECS.hingeY, BOX_SPECS.hingeZ)
  * So when lidAngle = 0:
- * - Z_local runs from 0.0 (back edge) to +5.20 (front edge)
+ * - Z_local runs from 0.0 (back edge) to +3.00 (front edge)
  * - Y_local runs from 0.0 (bottom rim of lid) to +0.36 (top surface of lid)
  */
 export function buildLidMesh() {
   const mb = new MeshBuilder();
   const hw = BOX_SPECS.width / 2;     // 0.96
-  const L = BOX_SPECS.length;         // 5.20
+  const L = BOX_SPECS.length;         // 3.00
   const lh = BOX_SPECS.lidHeight;     // 0.36
   const wt = BOX_SPECS.wallThick;     // 0.17
   const bev = 0.026;
@@ -457,7 +457,7 @@ export function buildSingleSlideMesh() {
 }
 
 /**
- * Computes the Z position of each of the 45 slots in the box
+ * Computes the Z position of each of the 24 slots in the box
  */
 export function getSlideSlotZ(index) {
   const hl = BOX_SPECS.length / 2;
@@ -466,6 +466,6 @@ export function getSlideSlotZ(index) {
   const usableZ = (innerZ - 0.08) * 2;
   const stepZ = usableZ / BOX_SPECS.numSlides;
   const startZ = -innerZ + 0.08;
-  // Index 0 is at the front (+Z) like the close-up photo, index 44 is at the back (-Z)
+  // Index 0 is at the front (+Z) like the close-up photo, index 23 is at the back (-Z)
   return startZ + (BOX_SPECS.numSlides - 0.5 - index) * stepZ;
 }

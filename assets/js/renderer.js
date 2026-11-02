@@ -1,7 +1,7 @@
 /**
  * WebGPU 3D Renderer for Dexter's Blood Slide Box
  * Uses native WebGPU API (navigator.gpu) with WGSL shaders, 4x MSAA,
- * dynamic uniform buffers, and back-to-front depth sorting for the 45 glass slides.
+ * dynamic uniform buffers, and back-to-front depth sorting for the 24 glass slides.
  */
 
 import { WGSL_SHADER } from './shaders.js';
@@ -18,13 +18,13 @@ const OBJECT_UNIFORM_SIZE = 144; // 2 * mat4 (128B) + vec4 (16B) = 144B
 const OBJECT_UNIFORM_STRIDE = 256; // WebGPU minUniformBufferOffsetAlignment = 256 bytes
 
 /**
- * Generates the high-res 2D canvas texture for the lid's inner numbered Index Card (01 - 50)
+ * Generates the high-res 2D canvas texture for the lid's inner numbered Index Card (01 - 24)
  * matching Reference Image 2 (top-left and top-right).
  */
 function createIndexCardCanvas() {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
-  canvas.height = 2048;
+  canvas.height = 1600;
   const ctx = canvas.getContext('2d');
 
   // Warm archival cream paper background
@@ -41,7 +41,7 @@ function createIndexCardCanvas() {
   const marginX = 76;
   const topY = 72;
   const bottomY = canvas.height - 72;
-  const rows = 50;
+  const rows = 24;
   const rowStep = (bottomY - topY) / rows;
 
   ctx.strokeStyle = '#9e978e';
@@ -59,7 +59,7 @@ function createIndexCardCanvas() {
     ctx.lineTo(canvas.width - marginX, y);
     ctx.stroke();
 
-    // Number on the left column (01 to 50)
+    // Number on the left column (01 to 24)
     const numStr = i < 10 ? `0${i}` : `${i}`;
     ctx.fillText(numStr, marginX + 6, y - 4);
   }
@@ -96,8 +96,8 @@ export class TrophyBoxRenderer {
     // 0: Base mesh
     // 1: Lid mesh
     // 2: Latch clasp loop mesh
-    // 3..47: 45 Glass slides
-    // 48..50: Mirrored floor reflections of Base, Lid, Clasp
+    // 3..26: 24 Glass slides
+    // 27..29: Mirrored floor reflections of Base, Lid, Clasp
     this.reflSlotBase = 3 + BOX_SPECS.numSlides;
     this.maxObjects = this.reflSlotBase + 3;
   }
@@ -475,7 +475,7 @@ export class TrophyBoxRenderer {
     this._writeObjectUniform(this.reflSlotBase + 1, sceneState.lidMatrix, -1, 0, 0, -1);
     this._writeObjectUniform(this.reflSlotBase + 2, sceneState.claspMatrix, -1, 0, 0, -1);
 
-    // Slots 3..47: 45 Slides
+    // Slots 3..26: 24 Slides
     const slideOrder = [];
     const camZ = sceneState.cameraPos[2];
     const camX = sceneState.cameraPos[0];
@@ -564,7 +564,7 @@ export class TrophyBoxRenderer {
     renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
     renderPass.drawIndexed(this.claspMesh.indexCount);
 
-    // Draw 45 Glass Slides sorted back-to-front
+    // Draw 24 Glass Slides sorted back-to-front
     renderPass.setPipeline(this.glassPipeline);
     renderPass.setVertexBuffer(0, this.slideMesh.vbo);
     renderPass.setIndexBuffer(this.slideMesh.ibo, 'uint32');

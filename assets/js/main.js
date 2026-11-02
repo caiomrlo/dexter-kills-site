@@ -197,7 +197,7 @@ class DexterBoxApp {
       this.camera.targetPitch = CLOSED_VIEW.pitch;
     } else {
       // Shift camera target and distance to frame the entire open lid (Y up to 5.44) and slides
-      this.camera.targetCenter = [0.0, 2.15, -0.85];
+      this.camera.targetCenter = [0.0, 2.15, -0.45];
       this.camera.targetDistance = 11.8;
       this.camera.targetPitch = 0.42;
     }
@@ -209,7 +209,7 @@ class DexterBoxApp {
       this.camera.targetYaw = 0.48;
       this.camera.targetPitch = 0.42;
       this.camera.targetDistance = 11.8;
-      this.camera.targetCenter = [0.0, 2.15, -0.85];
+      this.camera.targetCenter = [0.0, 2.15, -0.45];
     } else {
       this.camera.targetYaw = CLOSED_VIEW.yaw;
       this.camera.targetPitch = CLOSED_VIEW.pitch;
@@ -276,7 +276,7 @@ class DexterBoxApp {
         const numStr = num < 10 ? `0${num}` : `${num}`;
         if (counterVal) counterVal.textContent = `SLOT #${numStr} (HOVER)`;
       } else {
-        if (counterVal) counterVal.textContent = this.isOpen ? '45 AMOSTRAS EXPOSTAS' : 'CAIXA FECHADA';
+        if (counterVal) counterVal.textContent = this.isOpen ? '24 AMOSTRAS EXPOSTAS' : 'CAIXA FECHADA';
       }
       if (inspector) inspector.classList.add('hidden');
     }
@@ -294,7 +294,7 @@ class DexterBoxApp {
     const hw = BOX_SPECS.width / 2;
     const hl = BOX_SPECS.length / 2;
 
-    // 1. If open, test intersection against all 45 glass slides first
+    // 1. If open, test intersection against all 24 glass slides first
     let closestSlide = -1;
     let minSlideT = Infinity;
 
@@ -425,7 +425,7 @@ class DexterBoxApp {
     Mat4.identity(this.baseMatrix);
     Mat4.invert(this.invBaseMatrix, this.baseMatrix);
 
-    // 4. Compute Lid Matrix (pivots around back hinge at Y = 0.42, Z = -2.60)
+    // 4. Compute Lid Matrix (pivots around back hinge at Y = 0.42, Z = -1.50)
     const maxLidAngle = -1.83; // ~ -105 degrees backward tilt matching Reference Image 2
     const lidAngle = this.lidOpenProgress * maxLidAngle;
     Mat4.fromTranslation(this.lidMatrix, [0.0, BOX_SPECS.hingeY, BOX_SPECS.hingeZ]);
@@ -439,7 +439,7 @@ class DexterBoxApp {
     const claspSwingAngle = -Math.sin(this.claspOpenProgress * Math.PI * 0.5) * 0.95;
     Mat4.rotateX(this.claspMatrix, this.claspMatrix, claspSwingAngle);
 
-    // 6. Update all 45 Glass Slides
+    // 6. Update all 24 Glass Slides
     const slideSmooth = 1.0 - Math.exp(-12.0 * dt);
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = this.slides[i];
