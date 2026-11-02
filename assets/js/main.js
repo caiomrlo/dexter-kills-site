@@ -20,30 +20,30 @@ const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 
  * their respective slots inside the open Trophy Box as the user scrolls to Section 4.
  */
 const FLOATING_SLIDE_CONFIGS = [
-  // 1. Top-Left (partially outside top-left edge initially, slowly creeping into corner)
+  // 1. Top-Left (framing top-left corner, blood specimen visible inside viewport edge)
   {
     slotIndex: 0,
-    ndcX: -1.04,
-    ndcY: 0.84,
+    ndcX: -0.86,
+    ndcY: 0.78,
     depth: 6.4,
-    rollZ: 0.60,
-    tiltX: -0.36,
-    tiltY: 0.44,
-    driftX: 0.22,
-    driftY: -0.14,
+    rollZ: 0.58,
+    tiltX: -0.34,
+    tiltY: 0.42,
+    driftX: 0.16,
+    driftY: -0.12,
     spinZ: -0.16,
     phase: 0.0
   },
   // 2. Mid-Left (further in background, near outer left border, clear of center text)
   {
     slotIndex: 2,
-    ndcX: -1.08,
+    ndcX: -0.92,
     ndcY: 0.14,
-    depth: 10.6,
-    rollZ: -0.46,
-    tiltX: 0.34,
-    tiltY: 0.38,
-    driftX: 0.24,
+    depth: 10.2,
+    rollZ: -0.44,
+    tiltX: 0.32,
+    tiltY: 0.36,
+    driftX: 0.18,
     driftY: -0.06,
     spinZ: 0.14,
     phase: 1.15
@@ -51,14 +51,14 @@ const FLOATING_SLIDE_CONFIGS = [
   // 3. Bottom-Left (close macro foreground slide tucked at bottom-left edge)
   {
     slotIndex: 4,
-    ndcX: -1.05,
-    ndcY: -0.86,
-    depth: 4.5,
-    rollZ: -0.50,
-    tiltX: -0.32,
-    tiltY: 0.40,
-    driftX: 0.22,
-    driftY: 0.16,
+    ndcX: -0.84,
+    ndcY: -0.78,
+    depth: 4.6,
+    rollZ: -0.48,
+    tiltX: -0.30,
+    tiltY: 0.38,
+    driftX: 0.16,
+    driftY: 0.14,
     spinZ: 0.18,
     phase: 2.35
   },
@@ -66,40 +66,40 @@ const FLOATING_SLIDE_CONFIGS = [
   {
     slotIndex: 6,
     ndcX: -0.24,
-    ndcY: 1.12,
-    depth: 9.4,
-    rollZ: 0.65,
-    tiltX: -0.38,
-    tiltY: -0.30,
+    ndcY: 0.90,
+    depth: 9.0,
+    rollZ: 0.62,
+    tiltX: -0.36,
+    tiltY: -0.28,
     driftX: 0.06,
-    driftY: -0.22,
+    driftY: -0.16,
     spinZ: -0.14,
     phase: 3.50
   },
-  // 5. Top-Right (partially outside upper-right corner initially, slowly emerging)
+  // 5. Top-Right (framing upper-right corner, blood specimen visible)
   {
     slotIndex: 8,
-    ndcX: 1.05,
-    ndcY: 0.88,
+    ndcX: 0.86,
+    ndcY: 0.80,
     depth: 6.2,
-    rollZ: 0.62,
-    tiltX: -0.35,
-    tiltY: -0.42,
-    driftX: -0.22,
-    driftY: -0.16,
+    rollZ: 0.60,
+    tiltX: -0.34,
+    tiltY: -0.40,
+    driftX: -0.16,
+    driftY: -0.14,
     spinZ: -0.16,
     phase: 4.65
   },
   // 6. Mid-Right (hero foreground slide on far right edge, creeps inward without touching text)
   {
     slotIndex: 10,
-    ndcX: 1.06,
-    ndcY: -0.24,
-    depth: 4.75,
-    rollZ: 0.66,
-    tiltX: -0.34,
-    tiltY: -0.46,
-    driftX: -0.24,
+    ndcX: 0.85,
+    ndcY: -0.22,
+    depth: 4.85,
+    rollZ: 0.64,
+    tiltX: -0.32,
+    tiltY: -0.44,
+    driftX: -0.18,
     driftY: 0.08,
     spinZ: -0.18,
     phase: 5.45
@@ -107,14 +107,14 @@ const FLOATING_SLIDE_CONFIGS = [
   // 7. Bottom-Right (deeper background tucked at bottom-right viewport corner)
   {
     slotIndex: 12,
-    ndcX: 1.08,
-    ndcY: -0.92,
-    depth: 8.8,
-    rollZ: -0.42,
-    tiltX: 0.30,
-    tiltY: -0.36,
-    driftX: -0.22,
-    driftY: 0.18,
+    ndcX: 0.90,
+    ndcY: -0.82,
+    depth: 8.6,
+    rollZ: -0.40,
+    tiltX: 0.28,
+    tiltY: -0.34,
+    driftX: -0.16,
+    driftY: 0.14,
     spinZ: 0.15,
     phase: 6.20
   }
@@ -803,6 +803,8 @@ class DexterBoxApp {
     const boxVisible = this.smoothScrollProgress > 0.62;
 
     this.renderer.render({
+      viewMatrix: this.viewMatrix,
+      projMatrix: this.projMatrix,
       viewProjMatrix: this.viewProjMatrix,
       cameraPos: this.camera.pos,
       lidOpenProgress: this.lidOpenProgress,

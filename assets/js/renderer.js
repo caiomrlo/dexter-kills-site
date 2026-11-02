@@ -1,591 +1,614 @@
 /**
- * WebGPU 3D Renderer for Dexter's Blood Slide Box
- * Uses native WebGPU API (navigator.gpu) with WGSL shaders, 4x MSAA,
- * dynamic uniform buffers, and back-to-front depth sorting for the 24 glass slides.
+ * Three.js PBR + Shadow + Post-Processing Renderer for Dexter's Blood Slide Box
+ * Implements:
+ * - Complete out-of-the-box Physical PBR (MeshPhysicalMaterial with Clearcoat, IOR, Normal & Roughness maps)
+ * - Procedural Studio HDR Environment via PMREMGenerator for realistic reflections on glass, blood, brass & lacquer
+ * - Real-time PCFSoftShadowMap + Studio Contact Shadows + Subtle Glossy Floor Reflection
+ * - Dynamic back-to-front depth sorting for all 24 glass slides & 3D coagulated blood specimens
+ * - Integrated Post-Processing (EffectComposer with 4x MSAA, subtle HDR Specular Bloom & ACES Filmic Output)
  */
 
-import { WGSL_SHADER } from './shaders.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
 import {
   BOX_SPECS,
-  buildBaseMesh,
-  buildLidMesh,
-  buildLatchClaspMesh,
-  buildSingleSlideMesh
+  buildBaseGroup,
+  buildLidGroup,
+  buildClaspGroup,
+  createChamferedSlideGeometry
 } from './geometry.js';
 
-const OBJECT_UNIFORM_SIZE = 144; // 2 * mat4 (128B) + vec4 (16B) = 144B
-const OBJECT_UNIFORM_STRIDE = 256; // WebGPU minUniformBufferOffsetAlignment = 256 bytes
-
-/**
- * Generates the high-res 2D canvas texture for the lid's inner numbered Index Card (01 - 24)
- * matching Reference Image 2 (top-left and top-right).
- */
-function createIndexCardCanvas() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1600;
-  const ctx = canvas.getContext('2d');
-
-  // Warm archival cream paper background
-  ctx.fillStyle = '#f5f2eb';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Subtle paper vignette
-  const grad = ctx.createRadialGradient(512, 1024, 200, 512, 1024, 1200);
-  grad.addColorStop(0, 'rgba(255,255,255,0)');
-  grad.addColorStop(1, 'rgba(180,168,148,0.18)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const marginX = 76;
-  const topY = 72;
-  const bottomY = canvas.height - 72;
-  const rows = 24;
-  const rowStep = (bottomY - topY) / rows;
-
-  ctx.strokeStyle = '#9e978e';
-  ctx.lineWidth = 2.0;
-  ctx.fillStyle = '#332f2c';
-  ctx.font = 'bold 24px "Courier New", Courier, monospace';
-  ctx.textBaseline = 'bottom';
-
-  for (let i = 1; i <= rows; i++) {
-    const y = topY + i * rowStep;
-
-    // Horizontal ruled line
-    ctx.beginPath();
-    ctx.moveTo(marginX, y);
-    ctx.lineTo(canvas.width - marginX, y);
-    ctx.stroke();
-
-    // Number on the left column (01 to 24)
-    const numStr = i < 10 ? `0${i}` : `${i}`;
-    ctx.fillText(numStr, marginX + 6, y - 4);
-  }
-
-  // Vertical divider line after the numbers
-  ctx.strokeStyle = '#b0a99f';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(marginX + 52, topY + rowStep * 0.2);
-  ctx.lineTo(marginX + 52, bottomY);
-  ctx.stroke();
-
-  return canvas;
-}
+import {
+  createWoodPBRMaps,
+  createBrassPBRMaps,
+  createRackPBRMaps,
+  createIndexCardMaps,
+  createBloodSpecimenVariants,
+  createGlassSlideSurfaceMaps
+} from './textures.js';
 
 export class TrophyBoxRenderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.device = null;
-    this.context = null;
-    this.format = null;
-    this.sampleCount = 4;
+    this.renderer = null;
+    this.device = null; // truthy flag used by main.js to verify renderer is initialized
+    this.scene = null;
+    this.camera = null;
+    this.composer = null;
+    this.bloomPass = null;
 
-    this.msaaTexture = null;
-    this.depthTexture = null;
+    this.boxRoot = null;
+    this.baseGroup = null;
+    this.lidGroup = null;
+    this.claspGroup = null;
+    this.reflectionWrapper = null;
+    this.floorShadowMesh = null;
 
-    // Meshes
-    this.baseMesh = null;
-    this.lidMesh = null;
-    this.claspMesh = null;
-    this.slideMesh = null;
-
-    // Total drawable objects:
-    // 0: Base mesh
-    // 1: Lid mesh
-    // 2: Latch clasp loop mesh
-    // 3..26: 24 Glass slides
-    // 27..29: Mirrored floor reflections of Base, Lid, Clasp
-    this.reflSlotBase = 3 + BOX_SPECS.numSlides;
-    this.maxObjects = this.reflSlotBase + 3;
+    this.slideObjects = [];
+    this.camLightRig = null;
+    this.floatKeyLight = null;
+    this.floatRimLight = null;
   }
 
   async init() {
-    if (!navigator.gpu) {
-      throw new Error('WebGPU API not available in this browser.');
-    }
-
-    const adapter = await navigator.gpu.requestAdapter({
-      powerPreference: 'high-performance'
-    });
-    if (!adapter) {
-      throw new Error('Failed to request WebGPU adapter.');
-    }
-
-    this.device = await adapter.requestDevice();
-    this.context = this.canvas.getContext('webgpu');
-    this.format = navigator.gpu.getPreferredCanvasFormat();
-
-    this.context.configure({
-      device: this.device,
-      format: this.format,
-      alphaMode: 'premultiplied'
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      powerPreference: 'high-performance',
+      alpha: false
     });
 
-    this._createGeometries();
-    this._createTextures();
-    this._createUniformBuffers();
-    this._createPipelines();
+    this.renderer.setClearColor(0x000000, 1.0);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    this.device = this.renderer;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x000000);
+
+    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 50.0);
+
+    // 1. Generate Studio PMREM Environment Map for realistic PBR reflections
+    this._createStudioEnvironment();
+
+    // 2. Generate Procedural PBR Textures & Materials
+    this._createMaterials();
+
+    // 3. Build Scene Hierarchy (Trophy Box, Floor Reflection, 24 Microscope Slides)
+    this._buildSceneGraph();
+
+    // 4. Configure Studio Lighting & Real Shadow Mapping
+    this._setupLights();
+
+    // 5. Configure Integrated Post-Processing (4x MSAA + Subtle HDR Specular Bloom + ACES Output)
+    this._setupPostProcessing();
+
     this.resize();
   }
 
-  _uploadMesh(meshData) {
-    const vbo = this.device.createBuffer({
-      size: meshData.vertices.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true
-    });
-    new Float32Array(vbo.getMappedRange()).set(meshData.vertices);
-    vbo.unmap();
+  /**
+   * Builds a virtual 3D photography studio dome with softboxes and bakes it into a PMREM environment map
+   */
+  _createStudioEnvironment() {
+    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    pmremGenerator.compileCubemapShader();
 
-    const ibo = this.device.createBuffer({
-      size: meshData.indices.byteLength,
-      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true
-    });
-    new Uint32Array(ibo.getMappedRange()).set(meshData.indices);
-    ibo.unmap();
+    const envScene = new THREE.Scene();
+    envScene.background = new THREE.Color(0x282422);
 
-    return {
-      vbo,
-      ibo,
-      indexCount: meshData.indexCount
+    const addPanel = (pos, lookAt, w, h, color, intensity) => {
+      const geom = new THREE.PlaneGeometry(w, h);
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color).multiplyScalar(intensity),
+        side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.position.set(...pos);
+      mesh.lookAt(...lookAt);
+      envScene.add(mesh);
     };
+
+    // Balanced studio softboxes + floor bounce so glass edges never reflect pitch black
+    addPanel([0.0, 9.0, 2.0], [0, 0, 0], 7.5, 5.5, 0xfff6eb, 1.05);
+    addPanel([-7.5, 5.2, 2.5], [0, 0, 0], 6.5, 5.5, 0xd8e6f8, 0.90);
+    addPanel([0.0, 6.2, -8.0], [0, 0, 0], 10.0, 2.8, 0xfff1dc, 0.95);
+    addPanel([7.5, 3.5, -1.0], [0, 0, 0], 5.0, 4.0, 0xffeedd, 0.75);
+    addPanel([0.0, -6.5, 0.0], [0, 0, 0], 12.0, 12.0, 0xd8cfc4, 0.65);
+
+    const envRT = pmremGenerator.fromScene(envScene, 0.045);
+    this.scene.environment = envRT.texture;
+    pmremGenerator.dispose();
   }
 
-  _createGeometries() {
-    this.baseMesh = this._uploadMesh(buildBaseMesh());
-    this.lidMesh = this._uploadMesh(buildLidMesh());
-    this.claspMesh = this._uploadMesh(buildLatchClaspMesh());
-    this.slideMesh = this._uploadMesh(buildSingleSlideMesh());
-  }
+  _createMaterials() {
+    const maxAniso = Math.min(16, this.renderer.capabilities.getMaxAnisotropy() || 8);
 
-  _createTextures() {
-    const cardCanvas = createIndexCardCanvas();
-    this.indexCardTexture = this.device.createTexture({
-      size: [cardCanvas.width, cardCanvas.height, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
+    const woodMaps = createWoodPBRMaps(maxAniso);
+    const brassMaps = createBrassPBRMaps(maxAniso);
+    const rackMaps = createRackPBRMaps(maxAniso);
+    const cardMaps = createIndexCardMaps(maxAniso);
+    this.bloodVariants = createBloodSpecimenVariants(maxAniso);
+    this.glassSurfaceMaps = createGlassSlideSurfaceMaps(maxAniso);
+
+    // 1. Honduras Mahogany / Rosewood with Warm Satin-Lacquer Finish
+    this.woodMat = new THREE.MeshPhysicalMaterial({
+      map: woodMaps.map,
+      normalMap: woodMaps.normalMap,
+      normalScale: new THREE.Vector2(0.28, 0.28),
+      roughnessMap: woodMaps.roughnessMap,
+      roughness: 0.36,
+      metalness: 0.02,
+      clearcoat: 0.24,
+      clearcoatRoughness: 0.36,
+      clearcoatNormalMap: woodMaps.normalMap,
+      clearcoatNormalScale: new THREE.Vector2(0.15, 0.15),
+      ior: 1.48,
+      reflectivity: 0.45,
+      envMapIntensity: 0.58
     });
 
-    this.device.queue.copyExternalImageToTexture(
-      { source: cardCanvas },
-      { texture: this.indexCardTexture },
-      [cardCanvas.width, cardCanvas.height]
+    // 2. Brushed Antique Brass Hardware
+    this.brassMat = new THREE.MeshPhysicalMaterial({
+      map: brassMaps.map,
+      normalMap: brassMaps.normalMap,
+      normalScale: new THREE.Vector2(0.18, 0.18),
+      roughnessMap: brassMaps.roughnessMap,
+      roughness: 0.24,
+      metalness: 0.90,
+      clearcoat: 0.22,
+      clearcoatRoughness: 0.22,
+      envMapIntensity: 1.15
+    });
+
+    // Dark recessed screw slot material
+    this.darkBrassSlotMat = new THREE.MeshStandardMaterial({
+      color: 0x1a1106,
+      roughness: 0.7,
+      metalness: 0.4
+    });
+
+    // 3. Slotted Cream/Ivory Wood Rack
+    this.rackMat = new THREE.MeshStandardMaterial({
+      map: rackMaps.map,
+      normalMap: rackMaps.normalMap,
+      normalScale: new THREE.Vector2(0.22, 0.22),
+      roughness: 0.58,
+      metalness: 0.0,
+      envMapIntensity: 0.32
+    });
+
+    // Bright cream floor lining beneath the slides (so the 13 crimson blood drops pop vividly)
+    this.floorLiningMat = new THREE.MeshStandardMaterial({
+      color: 0xf4eee2,
+      map: rackMaps.map,
+      roughness: 0.65,
+      metalness: 0.0,
+      envMapIntensity: 0.28
+    });
+
+    // 4. Recessed Numbered Index Card (01 - 24)
+    this.indexCardMat = new THREE.MeshStandardMaterial({
+      map: cardMaps.map,
+      roughness: 0.82,
+      metalness: 0.0,
+      envMapIntensity: 0.18,
+      side: THREE.DoubleSide
+    });
+
+    // 5. Microscope Glass Slide — Optical Flat Faces (Group 0)
+    // Uses MeshStandardMaterial so grazing-angle bevels obey material.opacity strictly
+    // without overriding alpha to 1.0 over the stacked slides inside the box!
+    this.glassFaceBaseMat = new THREE.MeshStandardMaterial({
+      color: 0xf2faf8,
+      map: this.glassSurfaceMaps.map,
+      normalMap: this.glassSurfaceMaps.normalMap,
+      normalScale: new THREE.Vector2(0.12, 0.12),
+      transparent: true,
+      opacity: 0.35,
+      roughness: 0.06,
+      metalness: 0.08,
+      envMapIntensity: 0.95,
+      depthWrite: false,
+      side: THREE.FrontSide
+    });
+
+    // 6. Microscope Glass Slide — Chamfered 45° Soda-Lime Ground Glass Edges (Group 1)
+    this.glassEdgeBaseMat = new THREE.MeshStandardMaterial({
+      color: 0xc4ece2,
+      emissive: 0x16382e,
+      emissiveIntensity: 0.35,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.52,
+      metalness: 0.02,
+      envMapIntensity: 0.40,
+      depthWrite: false
+    });
+
+    // 7. 4 Coagulated Blood Drop Specimen Physical Materials
+    // Uses ruby-tinted specularColor (0xff3838) so surface highlights on the 3D meniscus
+    // stay rich wet-crimson and never wash out into chalky pastel pink!
+    this.bloodMaterials = this.bloodVariants.map((variant) => {
+      return new THREE.MeshPhysicalMaterial({
+        map: variant.map,
+        normalMap: variant.normalMap,
+        normalScale: new THREE.Vector2(1.15, 1.15),
+        roughnessMap: variant.roughnessMap,
+        roughness: 0.22,
+        metalness: 0.0,
+        specularColor: new THREE.Color(0xff3838),
+        specularIntensity: 0.45,
+        clearcoat: 0.0,
+        ior: 1.46,
+        envMapIntensity: 0.15,
+        emissive: new THREE.Color(0x6b050b),
+        emissiveMap: variant.map,
+        emissiveIntensity: 0.68,
+        transparent: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
+      });
+    });
+  }
+
+  _buildSceneGraph() {
+    const matBundle = {
+      woodMat: this.woodMat,
+      brassMat: this.brassMat,
+      darkBrassSlotMat: this.darkBrassSlotMat,
+      rackMat: this.rackMat,
+      floorLiningMat: this.floorLiningMat,
+      indexCardMat: this.indexCardMat
+    };
+
+    this.boxRoot = new THREE.Group();
+    this.scene.add(this.boxRoot);
+
+    // 1. Main Trophy Box Groups
+    this.baseGroup = buildBaseGroup(matBundle);
+    this.lidGroup = buildLidGroup(matBundle);
+    this.claspGroup = buildClaspGroup(matBundle);
+
+    this.boxRoot.add(this.baseGroup);
+    this.boxRoot.add(this.lidGroup);
+    this.boxRoot.add(this.claspGroup);
+
+    // 2. Subtle Glossy Floor Reflection & Soft Studio Contact Shadow Plane
+    this._buildStudioFloorAndReflection();
+
+    // 3. Build all 24 Microscope Glass Slides
+    const sharedSlideGeom = createChamferedSlideGeometry();
+    const specimenSize = 0.305;
+    const sharedSpecimenGeom = new THREE.PlaneGeometry(specimenSize, specimenSize);
+
+    for (let i = 0; i < BOX_SPECS.numSlides; i++) {
+      const slideGroup = new THREE.Group();
+      slideGroup.matrixAutoUpdate = false;
+
+      const faceMat = this.glassFaceBaseMat.clone();
+      const edgeMat = this.glassEdgeBaseMat.clone();
+
+      const glassMesh = new THREE.Mesh(sharedSlideGeom, [faceMat, edgeMat]);
+      glassMesh.castShadow = false;
+      glassMesh.receiveShadow = false;
+      slideGroup.add(glassMesh);
+
+      // Only the first 13 slides carry a coagulated blood drop specimen
+      let frontBlood = null;
+      let backBlood = null;
+      if (i < 13) {
+        const seed = i + 1.0;
+        const variantIdx = i % this.bloodMaterials.length;
+        const bloodMat = this.bloodMaterials[variantIdx];
+
+        const offsetX = Math.sin(seed * 17.3) * 0.030;
+        const offsetY = Math.cos(seed * 29.1) * 0.016;
+        const rotZ = (seed * 1.37) % (Math.PI * 2);
+        const scale = 0.94 + Math.sin(seed * 11.7) * 0.06;
+
+        const zFront = BOX_SPECS.slideThick * 0.5 + 0.0006;
+        frontBlood = new THREE.Mesh(sharedSpecimenGeom, bloodMat);
+        frontBlood.position.set(offsetX, offsetY, zFront);
+        frontBlood.rotation.z = rotZ;
+        frontBlood.scale.set(scale, scale, 1);
+        slideGroup.add(frontBlood);
+
+        backBlood = new THREE.Mesh(sharedSpecimenGeom, bloodMat);
+        backBlood.position.set(offsetX, offsetY, -zFront);
+        backBlood.rotation.y = Math.PI;
+        backBlood.rotation.z = -rotZ;
+        backBlood.scale.set(scale, scale, 1);
+        slideGroup.add(backBlood);
+      }
+
+      this.scene.add(slideGroup);
+      this.slideObjects.push({
+        group: slideGroup,
+        glassMesh,
+        faceMat,
+        edgeMat,
+        frontBlood,
+        backBlood
+      });
+    }
+  }
+
+  /**
+   * Builds a clean, artifact-free glossy studio floor reflection of the outer base & front brass latch
+   */
+  _buildStudioFloorAndReflection() {
+    this.reflectionWrapper = new THREE.Group();
+    this.reflectionWrapper.matrixAutoUpdate = false;
+
+    const hl = BOX_SPECS.length / 2;
+    const reflH = 0.24;
+
+    const reflWoodMat = this.woodMat.clone();
+    reflWoodMat.color = new THREE.Color(0x363636);
+    reflWoodMat.envMapIntensity = 0.16;
+    reflWoodMat.clearcoat = 0.15;
+
+    const reflBrassMat = this.brassMat.clone();
+    reflBrassMat.color = new THREE.Color(0x3e341e);
+    reflBrassMat.envMapIntensity = 0.22;
+
+    const baseReflGeom = new RoundedBoxGeometry(BOX_SPECS.width, reflH, BOX_SPECS.length, 2, 0.02);
+    const baseReflMesh = new THREE.Mesh(baseReflGeom, reflWoodMat);
+    baseReflMesh.position.set(0, -reflH * 0.5 - 0.004, 0);
+    this.reflectionWrapper.add(baseReflMesh);
+
+    const latchReflGeom = new RoundedBoxGeometry(0.46, 0.18, 0.025, 2, 0.006);
+    const latchReflMesh = new THREE.Mesh(latchReflGeom, reflBrassMat);
+    latchReflMesh.position.set(0, -0.14, hl + 0.01);
+    this.reflectionWrapper.add(latchReflMesh);
+
+    this.boxRoot.add(this.reflectionWrapper);
+
+    const floorGeom = new THREE.PlaneGeometry(14, 14);
+    floorGeom.rotateX(-Math.PI * 0.5);
+    const shadowMat = new THREE.ShadowMaterial({
+      opacity: 0.55,
+      color: 0x000000
+    });
+    this.floorShadowMesh = new THREE.Mesh(floorGeom, shadowMat);
+    this.floorShadowMesh.position.y = -0.001;
+    this.floorShadowMesh.receiveShadow = true;
+    this.boxRoot.add(this.floorShadowMesh);
+  }
+
+  _setupLights() {
+    // 1. Ambient / Hemisphere Studio Base
+    const hemiLight = new THREE.HemisphereLight(0xfff5e8, 0x221713, 0.75);
+    this.scene.add(hemiLight);
+
+    // 2. Main Studio Key Light (with high-res PCFSoftShadowMap for the Trophy Box)
+    this.keyLight = new THREE.DirectionalLight(0xfff4e6, 1.35);
+    this.keyLight.position.set(-1.6, 6.4, 3.8);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.width = 2048;
+    this.keyLight.shadow.mapSize.height = 2048;
+    this.keyLight.shadow.camera.near = 1.0;
+    this.keyLight.shadow.camera.far = 14.0;
+    const d = 2.4;
+    this.keyLight.shadow.camera.left = -d;
+    this.keyLight.shadow.camera.right = d;
+    this.keyLight.shadow.camera.top = d;
+    this.keyLight.shadow.camera.bottom = -d;
+    this.keyLight.shadow.bias = -0.0005;
+    this.keyLight.shadow.normalBias = 0.012;
+    this.keyLight.shadow.radius = 2.5;
+    this.scene.add(this.keyLight);
+
+    // 3. Studio Fill Light (right side)
+    const fillLight = new THREE.DirectionalLight(0xd8e6f6, 0.72);
+    fillLight.position.set(3.8, 4.2, 2.2);
+    this.scene.add(fillLight);
+
+    // 4. Back Rim Light (illuminates open lid edge & glass slide bevels)
+    const rimLight = new THREE.DirectionalLight(0xffeed9, 0.78);
+    rimLight.position.set(0.0, 3.8, -4.8);
+    this.scene.add(rimLight);
+
+    // 5. Soft Camera-Following Light Rig for the 7 Free-Floating Blood Slides in Sections 1-3
+    this.camLightRig = new THREE.Group();
+    this.floatKeyLight = new THREE.PointLight(0xfff0dd, 3.8, 22.0, 1.2);
+    this.floatKeyLight.position.set(3.5, 2.5, -2.2);
+    this.camLightRig.add(this.floatKeyLight);
+
+    this.floatRimLight = new THREE.PointLight(0xd8e8ff, 3.2, 22.0, 1.2);
+    this.floatRimLight.position.set(-3.8, -1.8, -2.5);
+    this.camLightRig.add(this.floatRimLight);
+
+    this.scene.add(this.camLightRig);
+  }
+
+  _setupPostProcessing() {
+    const width = Math.max(1, this.canvas.width);
+    const height = Math.max(1, this.canvas.height);
+
+    const renderTarget = new THREE.WebGLRenderTarget(width, height, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      samples: 4
+    });
+
+    this.composer = new EffectComposer(this.renderer, renderTarget);
+
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+
+    // Subtle HDR Specular Bloom
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(width, height),
+      0.06, // subtle optical halation strength
+      0.28, // radius
+      1.45  // strict HDR threshold so wood/paper never bloom
     );
+    this.composer.addPass(this.bloomPass);
 
-    this.sampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      mipmapFilter: 'linear',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge'
-    });
-  }
-
-  _createUniformBuffers() {
-    // Scene uniforms: mat4 viewProj (64B) + vec4 cameraPos (16B) + vec4 params (16B) = 96B
-    this.sceneUniformBuffer = this.device.createBuffer({
-      size: 96,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    });
-
-    // Dynamic uniform buffer for all objects
-    this.objectUniformBuffer = this.device.createBuffer({
-      size: this.maxObjects * OBJECT_UNIFORM_STRIDE,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-    });
-    this.objectStagingData = new Float32Array((this.maxObjects * OBJECT_UNIFORM_STRIDE) / 4);
-  }
-
-  _createPipelines() {
-    const shaderModule = this.device.createShaderModule({
-      code: WGSL_SHADER
-    });
-
-    this.sceneBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: { type: 'uniform' }
-        },
-        {
-          binding: 1,
-          visibility: GPUShaderStage.FRAGMENT,
-          texture: { sampleType: 'float' }
-        },
-        {
-          binding: 2,
-          visibility: GPUShaderStage.FRAGMENT,
-          sampler: { type: 'filtering' }
-        }
-      ]
-    });
-
-    this.objectBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        {
-          binding: 0,
-          visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-          buffer: {
-            type: 'uniform',
-            hasDynamicOffset: true,
-            minBindingSize: OBJECT_UNIFORM_SIZE
-          }
-        }
-      ]
-    });
-
-    this.sceneBindGroup = this.device.createBindGroup({
-      layout: this.sceneBindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
-        { binding: 1, resource: this.indexCardTexture.createView() },
-        { binding: 2, resource: this.sampler }
-      ]
-    });
-
-    this.objectBindGroup = this.device.createBindGroup({
-      layout: this.objectBindGroupLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.objectUniformBuffer,
-            offset: 0,
-            size: OBJECT_UNIFORM_SIZE
-          }
-        }
-      ]
-    });
-
-    const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [this.sceneBindGroupLayout, this.objectBindGroupLayout]
-    });
-
-    const vertexBuffers = [
-      {
-        arrayStride: 40,
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },  // position
-          { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
-          { shaderLocation: 2, offset: 24, format: 'float32x2' }, // uv
-          { shaderLocation: 3, offset: 32, format: 'float32' },   // matId
-          { shaderLocation: 4, offset: 36, format: 'float32' }    // extra
-        ]
-      }
-    ];
-
-    // 1. Opaque + Studio Floor Alpha Blend Pipeline (writes depth)
-    this.solidPipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'vs_main',
-        buffers: vertexBuffers
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
-          }
-        ]
-      },
-      primitive: {
-        topology: 'triangle-list',
-        cullMode: 'none'
-      },
-      depthStencil: {
-        depthWriteEnabled: true,
-        depthCompare: 'less-equal',
-        format: 'depth24plus'
-      },
-      multisample: {
-        count: this.sampleCount
-      }
-    });
-
-    // 2. Transparent Glass Slide Pipeline (sorted back-to-front, depth test on)
-    this.glassPipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: {
-        module: shaderModule,
-        entryPoint: 'vs_main',
-        buffers: vertexBuffers
-      },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: {
-                srcFactor: 'src-alpha',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              },
-              alpha: {
-                srcFactor: 'one',
-                dstFactor: 'one-minus-src-alpha',
-                operation: 'add'
-              }
-            }
-          }
-        ]
-      },
-      primitive: {
-        topology: 'triangle-list',
-        cullMode: 'none'
-      },
-      depthStencil: {
-        depthWriteEnabled: false,
-        depthCompare: 'less-equal',
-        format: 'depth24plus'
-      },
-      multisample: {
-        count: this.sampleCount
-      }
-    });
-
-    // 3. Floor reflection pipelines.
-    // 3a. Depth-only pre-pass so only the nearest reflected surface is kept (no stacked translucency)
-    this.reflDepthPipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format, writeMask: 0 }]
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
-      multisample: { count: this.sampleCount }
-    });
-
-    // 3b. Faded color pass, only on the surviving (equal-depth) reflected fragments
-    this.reflColorPipeline = this.device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: { module: shaderModule, entryPoint: 'vs_main', buffers: vertexBuffers },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [
-          {
-            format: this.format,
-            blend: {
-              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-              alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
-            }
-          }
-        ]
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { depthWriteEnabled: false, depthCompare: 'equal', format: 'depth24plus' },
-      multisample: { count: this.sampleCount }
-    });
+    const outputPass = new OutputPass();
+    this.composer.addPass(outputPass);
   }
 
   resize() {
+    if (!this.renderer) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
-    const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
+    const clientW = Math.max(1, this.canvas.clientWidth);
+    const clientH = Math.max(1, this.canvas.clientHeight);
+    const width = Math.max(1, Math.floor(clientW * dpr));
+    const height = Math.max(1, Math.floor(clientH * dpr));
 
-    if (this.canvas.width === width && this.canvas.height === height && this.msaaTexture) {
+    if (this.canvas.width === width && this.canvas.height === height) {
       return;
     }
 
-    this.canvas.width = width;
-    this.canvas.height = height;
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(clientW, clientH, false);
 
-    if (this.msaaTexture) this.msaaTexture.destroy();
-    if (this.depthTexture) this.depthTexture.destroy();
-
-    this.msaaTexture = this.device.createTexture({
-      size: [width, height],
-      sampleCount: this.sampleCount,
-      format: this.format,
-      usage: GPUTextureUsage.RENDER_ATTACHMENT
-    });
-
-    this.depthTexture = this.device.createTexture({
-      size: [width, height],
-      sampleCount: this.sampleCount,
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT
-    });
-  }
-
-  _writeObjectUniform(slotIndex, modelMat, slideIdx, hoverAmt, selectAmt, seed) {
-    const floatOffset = (slotIndex * OBJECT_UNIFORM_STRIDE) / 4;
-    // Model matrix
-    this.objectStagingData.set(modelMat, floatOffset);
-    // Normal matrix (for rigid body transforms, modelMat works directly)
-    this.objectStagingData.set(modelMat, floatOffset + 16);
-    // objParams
-    this.objectStagingData[floatOffset + 32] = slideIdx;
-    this.objectStagingData[floatOffset + 33] = hoverAmt;
-    this.objectStagingData[floatOffset + 34] = selectAmt;
-    this.objectStagingData[floatOffset + 35] = seed;
+    if (this.composer) {
+      this.composer.setPixelRatio(dpr);
+      this.composer.setSize(clientW, clientH);
+    }
   }
 
   render(sceneState) {
-    if (!this.msaaTexture || !this.depthTexture) {
-      this.resize();
-    }
+    if (!this.renderer) return;
 
     const boxVisible = sceneState.boxVisible !== false;
+    this.boxRoot.visible = boxVisible;
 
-    // 1. Update Scene Uniforms
-    const sceneData = new Float32Array(24);
-    sceneData.set(sceneState.viewProjMatrix, 0);
-    sceneData[16] = sceneState.cameraPos[0];
-    sceneData[17] = sceneState.cameraPos[1];
-    sceneData[18] = sceneState.cameraPos[2];
-    sceneData[19] = 1.0;
-    sceneData[20] = sceneState.lidOpenProgress;
-    sceneData[21] = sceneState.time;
-    sceneData[22] = sceneState.hoveredSlide;
-    sceneData[23] = sceneState.selectedSlide;
-    this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
-
-    // 2. Write Object Uniforms:
-    if (boxVisible) {
-      // Slot 0: Base
-      this._writeObjectUniform(0, sceneState.baseMatrix, -1, 0, 0, 0);
-      // Slot 1: Lid
-      this._writeObjectUniform(1, sceneState.lidMatrix, -1, 0, 0, 0);
-      // Slot 2: Clasp Loop
-      this._writeObjectUniform(2, sceneState.claspMatrix, -1, 0, 0, 0);
-
-      // Mirrored floor reflections (seed = -1 flags the reflection path in the shaders)
-      this._writeObjectUniform(this.reflSlotBase + 0, sceneState.baseMatrix, -1, 0, 0, -1);
-      this._writeObjectUniform(this.reflSlotBase + 1, sceneState.lidMatrix, -1, 0, 0, -1);
-      this._writeObjectUniform(this.reflSlotBase + 2, sceneState.claspMatrix, -1, 0, 0, -1);
+    // 1. Sync Three.js Camera from main.js matrices / state
+    const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
+    if (Math.abs(this.camera.aspect - aspect) > 1e-4) {
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
     }
 
-    // Slots 3..26: 24 Slides
-    const slideOrder = [];
-    const camZ = sceneState.cameraPos[2];
+    this.camera.matrixAutoUpdate = false;
+    this.camera.matrixWorldInverse.fromArray(sceneState.viewMatrix);
+    this.camera.matrixWorld.copy(this.camera.matrixWorldInverse).invert();
     const camX = sceneState.cameraPos[0];
     const camY = sceneState.cameraPos[1];
+    const camZ = sceneState.cameraPos[2];
+    this.camera.position.set(camX, camY, camZ);
+
+    // Move the floating-slide light rig with the camera, fading it out smoothly as we approach the Trophy Box
+    if (this.camLightRig) {
+      this.camLightRig.position.copy(this.camera.position);
+      this.camLightRig.quaternion.setFromRotationMatrix(this.camera.matrixWorld);
+      const floatLightFade = Math.max(0.0, Math.min(1.0, (camY - 9.0) / 6.0));
+      this.floatKeyLight.intensity = 3.8 * floatLightFade;
+      this.floatRimLight.intensity = 3.2 * floatLightFade;
+    }
+
+    // 2. Update Box Matrices (Base, Lid, Swinging Clasp + Floor Reflections)
+    if (boxVisible) {
+      this.baseGroup.matrix.fromArray(sceneState.baseMatrix);
+      this.baseGroup.updateMatrixWorld(true);
+
+      this.lidGroup.matrix.fromArray(sceneState.lidMatrix);
+      this.lidGroup.updateMatrixWorld(true);
+
+      this.claspGroup.matrix.fromArray(sceneState.claspMatrix);
+      this.claspGroup.updateMatrixWorld(true);
+
+      this.reflectionWrapper.matrix.fromArray(sceneState.baseMatrix);
+      this.reflectionWrapper.updateMatrixWorld(true);
+
+      // Modulate interior ambient intensity based on lidOpenProgress so closing the box darkens interior
+      const lidFactor = Math.max(0.25, sceneState.lidOpenProgress);
+      this.rackMat.envMapIntensity = 0.32 * lidFactor;
+      this.floorLiningMat.envMapIntensity = 0.28 * lidFactor;
+      this.indexCardMat.envMapIntensity = 0.18 * lidFactor;
+    }
+
+    // 3. Update & Sort all 24 Glass Slides back-to-front relative to Camera
+    const slideOrder = [];
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = sceneState.slides[i];
-      if (!boxVisible && !s.isFloating) {
-        continue;
+      const slideObj = this.slideObjects[i];
+      const visible = boxVisible || s.isFloating;
+      slideObj.group.visible = visible;
+      if (!visible) continue;
+
+      slideObj.group.matrix.fromArray(s.modelMatrix);
+      slideObj.group.updateMatrixWorld(true);
+
+      // Differentiate optical presence between free-floating slides against pitch-black background (Sections 1-3)
+      // and the 24 tightly stacked slides inside the cream-lined Trophy Box (Section 4)
+      const isHighFloating = s.worldPos[1] > 1.4 ? Math.min(1.0, (s.worldPos[1] - 1.4) / 2.0) : 0.0;
+      const activeAmt = Math.max(s.hoverProgress, s.selectProgress);
+
+      slideObj.faceMat.opacity = 0.52 + isHighFloating * 0.48 + activeAmt * 0.30;
+      slideObj.faceMat.envMapIntensity = 0.85 + isHighFloating * 0.45 + activeAmt * 0.35;
+
+      const baseEdgeOpacity = 0.42 + isHighFloating * 0.14;
+      if (activeAmt > 0.005) {
+        slideObj.edgeMat.color.setRGB(
+          0.85 + activeAmt * 0.15,
+          0.95 - activeAmt * 0.07,
+          0.90 - activeAmt * 0.40
+        );
+        slideObj.edgeMat.emissive.setRGB(
+          0.12 + activeAmt * 0.45,
+          0.24 + activeAmt * 0.28,
+          0.20
+        );
+        slideObj.edgeMat.opacity = baseEdgeOpacity + activeAmt * 0.45;
+      } else {
+        slideObj.edgeMat.color.setRGB(
+          0.86 - isHighFloating * 0.30,
+          0.96 - isHighFloating * 0.12,
+          0.92 - isHighFloating * 0.18
+        );
+        slideObj.edgeMat.emissive.setRGB(
+          0.14 - isHighFloating * 0.06,
+          0.26 - isHighFloating * 0.08,
+          0.22 - isHighFloating * 0.06
+        );
+        slideObj.edgeMat.opacity = baseEdgeOpacity;
       }
-      const slotIdx = 3 + i;
-      this._writeObjectUniform(
-        slotIdx,
-        s.modelMatrix,
-        i,
-        s.hoverProgress,
-        s.selectProgress,
-        i + 1.0
-      );
 
       const dx = s.worldPos[0] - camX;
       const dy = s.worldPos[1] - camY;
       const dz = s.worldPos[2] - camZ;
       const distSq = dx * dx + dy * dy + dz * dz;
-      slideOrder.push({ slotIdx, distSq });
+      slideOrder.push({ slideObj, distSq, isElevated: isHighFloating > 0.02 || activeAmt > 0.02 });
     }
 
-    // Sort transparent slides back-to-front relative to camera position
+    // Farthest slide gets lowest renderOrder; closest slide gets highest renderOrder.
     slideOrder.sort((a, b) => b.distSq - a.distSq);
-
-    // Upload all object uniforms in one batch
-    this.device.queue.writeBuffer(this.objectUniformBuffer, 0, this.objectStagingData);
-
-    // 3. Record Render Pass
-    const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
-
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: this.msaaTexture.createView(),
-          resolveTarget: textureView,
-          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
-          loadOp: 'clear',
-          storeOp: 'store'
-        }
-      ],
-      depthStencilAttachment: {
-        view: this.depthTexture.createView(),
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store'
+    for (let k = 0; k < slideOrder.length; k++) {
+      const { slideObj, isElevated } = slideOrder[k];
+      if (isElevated) {
+        const baseOrder = 300 + k * 3;
+        slideObj.glassMesh.renderOrder = baseOrder;
+        if (slideObj.backBlood) slideObj.backBlood.renderOrder = baseOrder + 1;
+        if (slideObj.frontBlood) slideObj.frontBlood.renderOrder = baseOrder + 2;
+      } else {
+        slideObj.glassMesh.renderOrder = 100 + k;
+        if (slideObj.backBlood) slideObj.backBlood.renderOrder = 200 + k * 2;
+        if (slideObj.frontBlood) slideObj.frontBlood.renderOrder = 200 + k * 2 + 1;
       }
-    });
-
-    renderPass.setBindGroup(0, this.sceneBindGroup);
-
-    if (boxVisible) {
-      // Floor reflection: depth pre-pass, then faded color on the nearest reflected surfaces.
-      // The (semi-transparent) floor shadow and the real box are drawn on top afterwards.
-      const reflMeshes = [this.baseMesh, this.lidMesh, this.claspMesh];
-      for (const pipeline of [this.reflDepthPipeline, this.reflColorPipeline]) {
-        renderPass.setPipeline(pipeline);
-        for (let m = 0; m < reflMeshes.length; m++) {
-          renderPass.setBindGroup(1, this.objectBindGroup, [(this.reflSlotBase + m) * OBJECT_UNIFORM_STRIDE]);
-          renderPass.setVertexBuffer(0, reflMeshes[m].vbo);
-          renderPass.setIndexBuffer(reflMeshes[m].ibo, 'uint32');
-          renderPass.drawIndexed(reflMeshes[m].indexCount);
-        }
-      }
-
-      // Draw Solid Meshes (Base, Lid, Latch Clasp)
-      renderPass.setPipeline(this.solidPipeline);
-
-      // Base (Slot 0)
-      renderPass.setBindGroup(1, this.objectBindGroup, [0 * OBJECT_UNIFORM_STRIDE]);
-      renderPass.setVertexBuffer(0, this.baseMesh.vbo);
-      renderPass.setIndexBuffer(this.baseMesh.ibo, 'uint32');
-      renderPass.drawIndexed(this.baseMesh.indexCount);
-
-      // Lid (Slot 1)
-      renderPass.setBindGroup(1, this.objectBindGroup, [1 * OBJECT_UNIFORM_STRIDE]);
-      renderPass.setVertexBuffer(0, this.lidMesh.vbo);
-      renderPass.setIndexBuffer(this.lidMesh.ibo, 'uint32');
-      renderPass.drawIndexed(this.lidMesh.indexCount);
-
-      // Latch Clasp Loop (Slot 2)
-      renderPass.setBindGroup(1, this.objectBindGroup, [2 * OBJECT_UNIFORM_STRIDE]);
-      renderPass.setVertexBuffer(0, this.claspMesh.vbo);
-      renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
-      renderPass.drawIndexed(this.claspMesh.indexCount);
     }
 
-    // Draw Glass Slides sorted back-to-front
-    renderPass.setPipeline(this.glassPipeline);
-    renderPass.setVertexBuffer(0, this.slideMesh.vbo);
-    renderPass.setIndexBuffer(this.slideMesh.ibo, 'uint32');
-
-    for (let i = 0; i < slideOrder.length; i++) {
-      const slotIdx = slideOrder[i].slotIdx;
-      renderPass.setBindGroup(1, this.objectBindGroup, [slotIdx * OBJECT_UNIFORM_STRIDE]);
-      renderPass.drawIndexed(this.slideMesh.indexCount);
+    // 4. Render with Integrated Post-Processing
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
     }
-
-    renderPass.end();
-    this.device.queue.submit([commandEncoder.finish()]);
   }
 }
