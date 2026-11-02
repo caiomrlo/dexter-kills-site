@@ -1,7 +1,7 @@
 /**
  * Main Application Entry Point — Dexter's Blood Slide Trophy Box (WebGPU)
- * Handles camera orbit controls, 3D raycast picking, lid/latch kinematics,
- * and individual glass slide inspection.
+ * Integrates GSAP ScrollSmoother, ScrollTrigger, and SplitText across 4 sections
+ * with the interactive 3D WebGPU Trophy Box in the 4th section.
  */
 
 import { TrophyBoxRenderer } from './renderer.js';
@@ -10,18 +10,20 @@ import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 
 // Initial / closed camera framing: straight-on front view (yaw 0) slightly above the box
 const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
+// Entrance framing when Section 4 starts entering the viewport from below
+const INTRO_OFFSET = { yaw: -0.55, pitch: 0.32, distance: 2.8, centerY: -0.35 };
 
 class DexterBoxApp {
   constructor() {
     this.canvas = document.getElementById('webgpu-canvas');
     this.renderer = new TrophyBoxRenderer(this.canvas);
 
-    // Camera Orbit State (starts front-aligned: latch facing the viewer, lid receding in depth)
+    // Camera Orbit State
     this.camera = {
-      yaw: CLOSED_VIEW.yaw,
-      pitch: CLOSED_VIEW.pitch,
-      distance: CLOSED_VIEW.distance,
-      target: [...CLOSED_VIEW.center],
+      yaw: CLOSED_VIEW.yaw + INTRO_OFFSET.yaw,
+      pitch: CLOSED_VIEW.pitch + INTRO_OFFSET.pitch,
+      distance: CLOSED_VIEW.distance + INTRO_OFFSET.distance,
+      target: [CLOSED_VIEW.center[0], CLOSED_VIEW.center[1] + INTRO_OFFSET.centerY, CLOSED_VIEW.center[2]],
       targetYaw: CLOSED_VIEW.yaw,
       targetPitch: CLOSED_VIEW.pitch,
       targetDistance: CLOSED_VIEW.distance,
@@ -29,7 +31,12 @@ class DexterBoxApp {
       pos: [0, 3, 8]
     };
 
-    // Box State (Starts CLOSED as requested)
+    // Scroll-driven entrance progress into Section 4 (0 = entering bottom, 1 = fully arrived)
+    this.scrollEntrance = 0.0;
+    this.isViewerVisible = false;
+    this.rafId = null;
+
+    // Box State (Starts CLOSED)
     this.isOpen = false;
     this.openTimeline = 0.0; // 0.0 = fully closed & locked, 1.0 = fully open
     this.lidOpenProgress = 0.0;
@@ -76,20 +83,177 @@ class DexterBoxApp {
   }
 
   async start() {
+    this._initScrollAndTypography();
+
     try {
       await this.renderer.init();
       this._bindEvents();
       this._updateUI();
-      requestAnimationFrame((t) => this._loop(t));
+      // Render initial warm-up frame so the canvas is ready before scrolling into Section 4
+      this._renderSingleFrame(performance.now());
+      if (this.isViewerVisible) {
+        this._startRenderLoop();
+      }
     } catch (err) {
       console.error('WebGPU initialization error:', err);
       const errOverlay = document.getElementById('webgpu-error');
       if (errOverlay) errOverlay.classList.remove('hidden');
-      const dot = document.getElementById('gpu-status-dot');
-      if (dot) {
-        dot.style.background = '#ef4444';
-        dot.style.boxShadow = '0 0 10px #ef4444';
+    }
+  }
+
+  _initScrollAndTypography() {
+    const gsap = window.gsap;
+    const ScrollTrigger = window.ScrollTrigger;
+    const ScrollSmoother = window.ScrollSmoother;
+    const SplitText = window.SplitText;
+
+    if (!gsap || !ScrollTrigger || !ScrollSmoother || !SplitText) {
+      console.warn('GSAP plugins not found.');
+      return;
+    }
+
+    gsap.registerPlugin(ScrollTrigger, ScrollSmoother, SplitText);
+
+    // Initialize ScrollSmoother for ultra-smooth inertial page scrolling
+    this.smoother = ScrollSmoother.create({
+      wrapper: '#smooth-wrapper',
+      content: '#smooth-content',
+      smooth: 2.2,
+      effects: true,
+      smoothTouch: 0.15,
+      ignoreMobileResize: true
+    });
+
+    const setupSplits = () => {
+      const headlines = document.querySelectorAll('[data-split-words]');
+
+      headlines.forEach((headline) => {
+        const section = headline.closest('.story-section');
+        const sectionIdx = Number(section?.dataset.section || 0);
+
+        const split = SplitText.create(headline, {
+          type: 'words',
+          wordsClass: 'split-word'
+        });
+
+        gsap.set(headline, { visibility: 'visible' });
+
+        if (sectionIdx === 1) {
+          // Section 1: "ESTA É A NOITE." — Entrance animation on load (not tied to scroll)
+          const indicator = section.querySelector('.scroll-indicator');
+
+          gsap.set(split.words, {
+            opacity: 0,
+            yPercent: 110,
+            rotateX: -45,
+            scale: 0.92
+          });
+
+          if (indicator) {
+            gsap.set(indicator, { opacity: 0, y: 14 });
+          }
+
+          const introTl = gsap.timeline({ delay: 0.15 });
+          introTl.to(split.words, {
+            opacity: 1,
+            yPercent: 0,
+            rotateX: 0,
+            scale: 1,
+            duration: 1.35,
+            stagger: 0.14,
+            ease: 'expo.out'
+          });
+
+          if (indicator) {
+            introTl.to(
+              indicator,
+              {
+                opacity: 0.72,
+                y: 0,
+                duration: 0.9,
+                ease: 'power2.out'
+              },
+              '-=0.7'
+            );
+
+            // Fade out the scroll indicator naturally as the user scrolls down
+            gsap.to(indicator, {
+              opacity: 0,
+              y: 20,
+              ease: 'none',
+              scrollTrigger: {
+                trigger: section,
+                start: 'top top',
+                end: '40% top',
+                scrub: true
+              }
+            });
+          }
+        } else {
+          // Section 2 ("E VAI ACONTECER DE NOVO E DE NOVO.")
+          // & Section 3 ("TEM QUE ACONTECER.")
+          // Words appear progressively as the section scrolls through the viewport
+          gsap.set(split.words, {
+            opacity: 0,
+            yPercent: 100,
+            rotateX: -40,
+            scale: 0.92
+          });
+
+          gsap.to(split.words, {
+            opacity: 1,
+            yPercent: 0,
+            rotateX: 0,
+            scale: 1,
+            ease: 'power3.out',
+            stagger: 0.15,
+            scrollTrigger: {
+              trigger: section,
+              start: 'top 85%',
+              end: 'center 42%',
+              scrub: 1.1
+            }
+          });
+        }
+      });
+
+      // Section 4: Trophy Box 3D integration & active rendering lifecycle
+      const trophySection = document.getElementById('trophy-section');
+      if (trophySection) {
+        // Pause/resume WebGPU loop when Section 4 is near/in viewport to prevent any scroll lag
+        ScrollTrigger.create({
+          trigger: trophySection,
+          start: 'top 125%',
+          end: 'bottom -25%',
+          onToggle: (self) => {
+            this.isViewerVisible = self.isActive;
+            if (this.isViewerVisible) {
+              this._startRenderLoop();
+            } else {
+              this._stopRenderLoop();
+            }
+          }
+        });
+
+        // Smooth camera dolly & rotation as the user scrolls into Section 4
+        ScrollTrigger.create({
+          trigger: trophySection,
+          start: 'top bottom',
+          end: 'top top',
+          scrub: true,
+          onUpdate: (self) => {
+            this.scrollEntrance = self.progress;
+          }
+        });
       }
+
+      ScrollTrigger.refresh();
+    };
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(setupSplits);
+    } else {
+      setupSplits();
     }
   }
 
@@ -132,10 +296,11 @@ class DexterBoxApp {
       }
     });
 
-    // Mouse wheel zoom
+    // Only intercept wheel for camera zoom when holding Ctrl/Alt/Meta so normal wheel scrolls smoothly
     this.canvas.addEventListener(
       'wheel',
       (e) => {
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) return;
         e.preventDefault();
         const zoomSpeed = 0.0045;
         this.camera.targetDistance = Math.max(
@@ -146,45 +311,51 @@ class DexterBoxApp {
       { passive: false }
     );
 
-    // UI Buttons
-    const toggleBtn = document.getElementById('toggle-box-btn');
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', () => this.toggleBox());
-    }
-
-    const resetBtn = document.getElementById('reset-cam-btn');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => this.resetCamera());
-    }
-
-    const closeInspectorBtn = document.getElementById('inspector-close');
-    if (closeInspectorBtn) {
-      closeInspectorBtn.addEventListener('click', () => this.selectSlide(-1));
-    }
-
-    const prevSlideBtn = document.getElementById('prev-slide-btn');
-    if (prevSlideBtn) {
-      prevSlideBtn.addEventListener('click', () => {
-        if (this.selectedSlide > 0) {
-          this.selectSlide(this.selectedSlide - 1);
-        } else {
-          this.selectSlide(BOX_SPECS.numSlides - 1);
+    // ResizeObserver avoids querying layout inside the render loop
+    if (window.ResizeObserver) {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (this.renderer.device) {
+          this.renderer.resize();
+          if (!this.isViewerVisible) {
+            this._renderSingleFrame(performance.now());
+          }
         }
       });
+      this.resizeObserver.observe(this.canvas);
+    } else {
+      window.addEventListener('resize', () => this.renderer.resize());
     }
+  }
 
-    const nextSlideBtn = document.getElementById('next-slide-btn');
-    if (nextSlideBtn) {
-      nextSlideBtn.addEventListener('click', () => {
-        if (this.selectedSlide < BOX_SPECS.numSlides - 1) {
-          this.selectSlide(this.selectedSlide + 1);
-        } else {
-          this.selectSlide(0);
-        }
-      });
+  _startRenderLoop() {
+    if (this.rafId !== null || !this.renderer.device) return;
+    this.lastFrameTime = performance.now();
+    this.rafId = requestAnimationFrame((t) => this._loop(t));
+  }
+
+  _stopRenderLoop() {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
     }
+  }
 
-    window.addEventListener('resize', () => this.renderer.resize());
+  _renderSingleFrame(now) {
+    if (!this.renderer.device) return;
+    const timeSec = now * 0.001;
+    this._updateKinematics(0.016, timeSec);
+    this.renderer.render({
+      viewProjMatrix: this.viewProjMatrix,
+      cameraPos: this.camera.pos,
+      lidOpenProgress: this.lidOpenProgress,
+      time: timeSec,
+      hoveredSlide: this.hoveredSlide,
+      selectedSlide: this.selectedSlide,
+      baseMatrix: this.baseMatrix,
+      lidMatrix: this.lidMatrix,
+      claspMatrix: this.claspMatrix,
+      slides: this.slides
+    });
   }
 
   toggleBox() {
@@ -228,58 +399,7 @@ class DexterBoxApp {
   }
 
   _updateUI() {
-    const toggleText = document.getElementById('toggle-box-text');
-    const toggleIcon = document.getElementById('toggle-box-icon');
-    const hint = document.getElementById('contextual-hint');
-    const counterVal = document.getElementById('slide-counter-value');
-    const inspector = document.getElementById('slide-inspector');
-
-    if (toggleText) {
-      toggleText.textContent = this.isOpen ? 'Fechar Caixa' : 'Abrir Caixa';
-    }
-    if (toggleIcon) {
-      toggleIcon.innerHTML = this.isOpen ? '&#128274;' : '&#128275;';
-    }
-    if (hint) {
-      hint.innerHTML = this.isOpen
-        ? '<strong>Passe o mouse / Clique nas lâminas:</strong> Inspecionar amostra'
-        : '<strong>Clique no fecho dourado ou na tampa:</strong> Abrir caixa';
-    }
-
-    if (this.selectedSlide >= 0 && this.isOpen) {
-      const num = this.selectedSlide + 1;
-      const numStr = num < 10 ? `0${num}` : `${num}`;
-      if (counterVal) counterVal.textContent = `LÂMINA #${numStr} / ${BOX_SPECS.numSlides}`;
-      if (inspector) inspector.classList.remove('hidden');
-
-      const inspId = document.getElementById('inspector-id');
-      const metaSlot = document.getElementById('meta-slot');
-      const metaDate = document.getElementById('meta-date');
-      const metaCoag = document.getElementById('meta-coag');
-      const dropEl = document.getElementById('inspector-drop');
-
-      if (inspId) inspId.textContent = `AMOSTRA #${numStr}`;
-      if (metaSlot) metaSlot.textContent = `${numStr} / ${BOX_SPECS.numSlides}`;
-      if (metaDate) metaDate.textContent = `LINHA #${numStr} DO CATÁLOGO`;
-      if (metaCoag) {
-        const coagPct = (97.2 + ((num * 7) % 25) * 0.1).toFixed(1);
-        metaCoag.textContent = `${coagPct}% SECO`;
-      }
-      if (dropEl) {
-        const scale = 0.88 + ((num * 13) % 24) * 0.012;
-        const rot = (num * 47) % 360;
-        dropEl.style.transform = `scale(${scale}) rotate(${rot}deg)`;
-      }
-    } else {
-      if ( this.hoveredSlide >= 0 && this.isOpen ) {
-        const num = this.hoveredSlide + 1;
-        const numStr = num < 10 ? `0${num}` : `${num}`;
-        if (counterVal) counterVal.textContent = `SLOT #${numStr} (HOVER)`;
-      } else {
-        if (counterVal) counterVal.textContent = this.isOpen ? '24 AMOSTRAS EXPOSTAS' : 'CAIXA FECHADA';
-      }
-      if (inspector) inspector.classList.add('hidden');
-    }
+    // Reserved for optional HUD indicators if present
   }
 
   _getRayFromPointer(clientX, clientY) {
@@ -301,7 +421,6 @@ class DexterBoxApp {
     if (this.lidOpenProgress > 0.45) {
       const sW = BOX_SPECS.slideWidth / 2;
       const sH = BOX_SPECS.slideHeight / 2;
-      // Slightly generous Z thickness for comfortable mouse picking of thin glass slides
       const pickHalfThick = 0.042;
       const slideMin = [-sW, -sH, -pickHalfThick];
       const slideMax = [sW, sH, pickHalfThick];
@@ -374,14 +493,24 @@ class DexterBoxApp {
   }
 
   _updateKinematics(dt, timeSec) {
+    // Smooth cubic ease-out of scroll entrance (0 -> 1 as Section 4 reaches top of viewport)
+    const introRem = 1.0 - Math.min(1.0, Math.max(0.0, this.scrollEntrance));
+    const introEase = introRem * introRem;
+
+    const effectiveTargetYaw = this.camera.targetYaw + INTRO_OFFSET.yaw * introEase;
+    const effectiveTargetPitch = Math.min(1.48, this.camera.targetPitch + INTRO_OFFSET.pitch * introEase);
+    const effectiveTargetDist = this.camera.targetDistance + INTRO_OFFSET.distance * introEase;
+    const effectiveTargetCenterY = this.camera.targetCenter[1] + INTRO_OFFSET.centerY * introEase;
+
     // 1. Smoothly damp camera orbit
     const camSmooth = 1.0 - Math.exp(-10.0 * dt);
-    this.camera.yaw += (this.camera.targetYaw - this.camera.yaw) * camSmooth;
-    this.camera.pitch += (this.camera.targetPitch - this.camera.pitch) * camSmooth;
-    this.camera.distance += (this.camera.targetDistance - this.camera.distance) * camSmooth;
-    for (let k = 0; k < 3; k++) {
-      this.camera.target[k] += (this.camera.targetCenter[k] - this.camera.target[k]) * camSmooth;
-    }
+    this.camera.yaw += (effectiveTargetYaw - this.camera.yaw) * camSmooth;
+    this.camera.pitch += (effectiveTargetPitch - this.camera.pitch) * camSmooth;
+    this.camera.distance += (effectiveTargetDist - this.camera.distance) * camSmooth;
+
+    this.camera.target[0] += (this.camera.targetCenter[0] - this.camera.target[0]) * camSmooth;
+    this.camera.target[1] += (effectiveTargetCenterY - this.camera.target[1]) * camSmooth;
+    this.camera.target[2] += (this.camera.targetCenter[2] - this.camera.target[2]) * camSmooth;
 
     const cosP = Math.cos(this.camera.pitch);
     const sinP = Math.sin(this.camera.pitch);
@@ -394,9 +523,6 @@ class DexterBoxApp {
 
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
     Mat4.perspectiveZO(this.projMatrix, (38 * Math.PI) / 180, aspect, 0.1, 45.0);
-    // Shift the scene to the right half of the screen (headline lives on the left)
-    const shiftX = 0;
-    this.projMatrix[8] = -shiftX;
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
     Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
@@ -416,7 +542,6 @@ class DexterBoxApp {
 
     // Stage 2 (0.16 -> 1.0): Lid swings open to 105 degrees (-1.83 radians)
     const rawLid = Math.min(1.0, Math.max(0.0, (this.openTimeline - 0.16) / 0.84));
-    // Smooth cubic ease-in-out
     this.lidOpenProgress = rawLid < 0.5
       ? 4.0 * rawLid * rawLid * rawLid
       : 1.0 - Math.pow(-2.0 * rawLid + 2.0, 3.0) / 2.0;
@@ -426,7 +551,7 @@ class DexterBoxApp {
     Mat4.invert(this.invBaseMatrix, this.baseMatrix);
 
     // 4. Compute Lid Matrix (pivots around back hinge at Y = 0.42, Z = -1.50)
-    const maxLidAngle = -1.83; // ~ -105 degrees backward tilt matching Reference Image 2
+    const maxLidAngle = -1.83;
     const lidAngle = this.lidOpenProgress * maxLidAngle;
     Mat4.fromTranslation(this.lidMatrix, [0.0, BOX_SPECS.hingeY, BOX_SPECS.hingeZ]);
     Mat4.rotateX(this.lidMatrix, this.lidMatrix, lidAngle);
@@ -435,7 +560,6 @@ class DexterBoxApp {
     // 5. Compute Swinging Brass Clasp Loop Matrix (attached to front of lid)
     Mat4.copy(this.claspMatrix, this.lidMatrix);
     Mat4.translate(this.claspMatrix, this.claspMatrix, [0.0, 0.08, BOX_SPECS.length + 0.025]);
-    // Swings outward when unlocking, then rests neatly at the top rim of the open lid
     const claspSwingAngle = -Math.sin(this.claspOpenProgress * Math.PI * 0.5) * 0.95;
     Mat4.rotateX(this.claspMatrix, this.claspMatrix, claspSwingAngle);
 
@@ -449,7 +573,6 @@ class DexterBoxApp {
       s.hoverProgress += (targetHover - s.hoverProgress) * slideSmooth;
       s.selectProgress += (targetSelect - s.selectProgress) * slideSmooth;
 
-      // Neighbor wave effect when hovering a slide
       let neighborWave = 0.0;
       if (this.isOpen && this.hoveredSlide >= 0 && this.selectedSlide === -1) {
         const distSlots = Math.abs(i - this.hoveredSlide);
@@ -458,7 +581,6 @@ class DexterBoxApp {
         }
       }
 
-      // Base resting height of slide center is Y = 0.34 (bottom at 0.11, top at 0.57)
       const floatOsc = s.selectProgress > 0.01 ? Math.sin(timeSec * 2.6) * 0.025 * s.selectProgress : 0.0;
       const posY = 0.34 + s.hoverProgress * 0.19 + neighborWave + s.selectProgress * 0.95 + floatOsc;
       const posZ = s.slotZ + s.selectProgress * (0.35 - s.slotZ * 0.35);
@@ -470,7 +592,6 @@ class DexterBoxApp {
 
       Mat4.fromTranslation(s.modelMatrix, s.worldPos);
       if (s.selectProgress > 0.001) {
-        // Tilt slightly toward the viewer when inspected
         Mat4.rotateY(s.modelMatrix, s.modelMatrix, s.selectProgress * 0.25);
         Mat4.rotateX(s.modelMatrix, s.modelMatrix, -s.selectProgress * 0.18);
       }
@@ -479,6 +600,11 @@ class DexterBoxApp {
   }
 
   _loop(now) {
+    if (!this.isViewerVisible) {
+      this.rafId = null;
+      return;
+    }
+
     const dt = Math.min(0.05, (now - this.lastFrameTime) * 0.001);
     this.lastFrameTime = now;
     const timeSec = now * 0.001;
@@ -498,7 +624,7 @@ class DexterBoxApp {
       slides: this.slides
     });
 
-    requestAnimationFrame((t) => this._loop(t));
+    this.rafId = requestAnimationFrame((t) => this._loop(t));
   }
 }
 

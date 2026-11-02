@@ -7,30 +7,64 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='60' y='20' rx='6' fill='rgba(210,240,235,0.6)' stroke='%2388bbaa' stroke-width='4'/><circle cx='50' cy='50' r='18' fill='%238b0d14'/></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,700;0,800;0,900;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
-  <main class="viewer-section">
-    <canvas id="webgpu-canvas"></canvas>
+  <div id="smooth-wrapper">
+    <div id="smooth-content">
+      <!-- Seção 1 -->
+      <section class="story-section section-1" data-section="1">
+        <div class="section-inner">
+          <h1 class="story-headline" data-split-words>
+            Esta é a noite.
+          </h1>
+        </div>
+        <div class="scroll-indicator" aria-hidden="true">
+          <span class="scroll-label">SCROLL</span>
+          <span class="scroll-line"></span>
+        </div>
+      </section>
 
-    <div class="headline">
-      <h1>
-        <span class="line-blood">Alguns segredos não podem ser enterrados.</span>
-        <span class="line-gray">Eles precisam ser guardados.</span>
-      </h1>
+      <!-- Seção 2 -->
+      <section class="story-section section-2" data-section="2">
+        <div class="section-inner">
+          <h2 class="story-headline" data-split-words>
+            E vai acontecer de novo e de novo.
+          </h2>
+        </div>
+      </section>
+
+      <!-- Seção 3 -->
+      <section class="story-section section-3" data-section="3">
+        <div class="section-inner">
+          <h2 class="story-headline" data-split-words>
+            Tem que acontecer.
+          </h2>
+        </div>
+      </section>
+
+      <!-- Seção 4: Caixa de Troféus 3D -->
+      <section id="trophy-section" class="story-section viewer-section section-4" data-section="4">
+        <canvas id="webgpu-canvas"></canvas>
+
+        <!-- WebGPU Fallback Notice -->
+        <div id="webgpu-error" class="error-overlay hidden">
+          <div class="error-box">
+            <h2>WebGPU Não Disponível</h2>
+            <p>Seu navegador não suporta ou não está com o <strong>WebGPU</strong> habilitado.</p>
+            <p>Utilize uma versão recente do Chrome, Edge ou Firefox Nightly com WebGPU ativo.</p>
+          </div>
+        </div>
+      </section>
     </div>
+  </div>
 
-    <!-- WebGPU Fallback Notice -->
-    <div id="webgpu-error" class="error-overlay hidden">
-      <div class="error-box">
-        <h2>WebGPU Não Disponível</h2>
-        <p>Seu navegador não suporta ou não está com o <strong>WebGPU</strong> habilitado.</p>
-        <p>Utilize uma versão recente do Chrome, Edge ou Firefox Nightly com WebGPU ativo.</p>
-      </div>
-    </div>
-  </main>
-
+  <!-- GSAP Core + ScrollTrigger + ScrollSmoother + SplitText -->
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollSmoother.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
   <script type="module" src="assets/js/main.js"></script>
 </body>
 </html>

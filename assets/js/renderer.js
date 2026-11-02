@@ -447,7 +447,9 @@ export class TrophyBoxRenderer {
   }
 
   render(sceneState) {
-    this.resize();
+    if (!this.msaaTexture || !this.depthTexture) {
+      this.resize();
+    }
 
     // 1. Update Scene Uniforms
     const sceneData = new Float32Array(24);
