@@ -130,6 +130,10 @@ class DexterBoxApp {
     this.smoothScrollProgress = 0.0;
     this.rafId = null;
 
+    // Outro (Section 5) progress: 0 = box open & centered, 1 = closed & on the right
+    this.outroProgress = 0.0;
+    this.smoothOutro = 0.0;
+
     // Box State (Starts OPEN as requested)
     this.isOpen = true;
     this.openTimeline = 1.0; // 0.0 = fully closed & locked, 1.0 = fully open
@@ -356,6 +360,58 @@ class DexterBoxApp {
             }
           }
         });
+      }
+
+      // Section 5 (outro): box closes & moves right, headline reveals on the left
+      const outroSection = document.getElementById('outro-section');
+      const outroPin = outroSection?.querySelector('.outro-pin');
+      const outroHeadline = outroSection?.querySelector('[data-split-outro]');
+      if (outroSection && outroPin && outroHeadline) {
+        ScrollTrigger.create({
+          trigger: outroSection,
+          start: 'top bottom',
+          end: 'top top',
+          scrub: true,
+          onUpdate: (self) => {
+            this.outroProgress = self.progress;
+          }
+        });
+
+        ScrollTrigger.create({
+          trigger: outroSection,
+          start: 'top top',
+          end: 'bottom bottom',
+          pin: outroPin,
+          pinSpacing: false,
+          anticipatePin: 1
+        });
+
+        const split = SplitText.create(outroHeadline, { type: 'lines,words', linesClass: 'outro-line' });
+        gsap.set(outroHeadline, { visibility: 'visible' });
+        gsap.set(split.words, { opacity: 0, x: -60, force3D: true });
+        gsap.to(split.words, {
+          opacity: 1,
+          x: 0,
+          force3D: true,
+          ease: 'power3.out',
+          stagger: 0.12,
+          scrollTrigger: {
+            trigger: outroSection,
+            start: 'top 55%',
+            end: 'top 5%',
+            scrub: 0.4
+          }
+        });
+
+        const cta = outroSection.querySelector('.outro-cta');
+        if (cta) {
+          gsap.fromTo(cta, { opacity: 0, y: 20 }, {
+            opacity: 1,
+            y: 0,
+            ease: 'power2.out',
+            scrollTrigger: { trigger: outroSection, start: 'top 20%', end: 'top 5%', scrub: 0.4 }
+          });
+        }
       }
 
       ScrollTrigger.refresh();
@@ -600,10 +656,22 @@ class DexterBoxApp {
       yawOffset = -0.26 * Math.sin(u4 * Math.PI) * (1.0 - u4 * 0.5);
     }
 
-    const effectiveTargetYaw = this.camera.targetYaw + yawOffset;
-    const effectiveTargetPitch = Math.max(0.08, Math.min(1.48, this.camera.targetPitch + pitchOffset));
-    const effectiveTargetDist = this.camera.targetDistance;
-    const effectiveTargetCenterY = this.camera.targetCenter[1] + scrollLiftY;
+    // Outro (Section 5): box closes and slides to the right while the headline appears on the left
+    const outro = Math.min(1.0, Math.max(0.0, this.outroProgress));
+    this.smoothOutro += (outro - this.smoothOutro) * (1.0 - Math.exp(-8.0 * dt));
+    const so = this.smoothOutro;
+    const outroEase = so * so * (3.0 - 2.0 * so);
+    // Camera blends towards the closed framing only while the box is still scroll-driven
+    const camMix = this.isOpen ? outroEase : 0.0;
+
+    const effectiveTargetYaw = this.camera.targetYaw + yawOffset + 0.62 * camMix;
+    const effectiveTargetPitch = Math.max(
+      0.08,
+      Math.min(1.48, this.camera.targetPitch + pitchOffset + (CLOSED_VIEW.pitch - OPEN_VIEW.pitch) * camMix)
+    );
+    const effectiveTargetDist = this.camera.targetDistance + (CLOSED_VIEW.distance - 1.7 - OPEN_VIEW.distance) * camMix;
+    const effectiveTargetCenterY =
+      this.camera.targetCenter[1] + scrollLiftY + (CLOSED_VIEW.center[1] - OPEN_VIEW.center[1]) * camMix;
 
     // 1. Smoothly damp camera orbit
     const camSmooth = 1.0 - Math.exp(-10.0 * dt);
@@ -627,6 +695,9 @@ class DexterBoxApp {
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
     const fovy = (38 * Math.PI) / 180;
     Mat4.perspectiveZO(this.projMatrix, fovy, aspect, 0.1, 45.0);
+    // Shift the whole scene to the right in screen space (clip.x += offset * clip.w)
+    this.projMatrix[8] = -0.5 * outroEase;
+    this.screenShiftX = 0.5 * outroEase;
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
     Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
@@ -647,6 +718,12 @@ class DexterBoxApp {
       this.openTimeline = Math.min(1.0, this.openTimeline + dt * timelineSpeed);
     } else if (this.openTimeline > targetTimeline) {
       this.openTimeline = Math.max(0.0, this.openTimeline - dt * timelineSpeed);
+    }
+
+    // Scroll-driven closing: box shuts during the first part of the outro
+    if (this.isOpen && this.outroProgress > 0.001) {
+      const closeT = Math.min(1.0, this.outroProgress / 0.55);
+      this.openTimeline = Math.min(this.openTimeline, 1.0 - closeT);
     }
 
     // Stage 1 (0.0 -> 0.22): Clasp loop unhooks
@@ -809,6 +886,7 @@ class DexterBoxApp {
       cameraPos: this.camera.pos,
       lidOpenProgress: this.lidOpenProgress,
       time: timeSec,
+      screenShiftX: this.screenShiftX || 0,
       hoveredSlide: this.hoveredSlide,
       selectedSlide: this.selectedSlide,
       baseMatrix: this.baseMatrix,

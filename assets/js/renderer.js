@@ -553,6 +553,10 @@ export class TrophyBoxRenderer {
       this.camera.updateProjectionMatrix();
     }
 
+    // Screen-space horizontal shift (clip.x += shift * clip.w) applied every frame
+    this.camera.projectionMatrix.elements[8] = -(sceneState.screenShiftX || 0);
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+
     this.camera.matrixAutoUpdate = false;
     this.camera.matrixWorldInverse.fromArray(sceneState.viewMatrix);
     this.camera.matrixWorld.copy(this.camera.matrixWorldInverse).invert();
