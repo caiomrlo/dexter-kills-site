@@ -337,7 +337,8 @@ fn shadeSurface(in : VertexOutput, camPos : vec3<f32>) -> vec4<f32> {
   let fresnel = clamp(pow(1.0 - NoV, 3.8), 0.0, 1.0);
 
   // Inside the dried blood drop specimen (normR < 1.02)
-  if (normR < 1.02) {
+  // Only the first 13 slides carry a blood specimen; the rest are blank glass
+  if (normR < 1.02 && seed < 13.5) {
     let edgeSoft = 1.0 - smoothstep(0.93, 1.02, normR);
     // Authentic dried blood coagulation rings (Reference Image 2 bottom-left):
     let outerRing = exp(-pow((normR - 0.83) / 0.12, 2.0));
