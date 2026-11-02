@@ -11,6 +11,18 @@
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
+  <!-- Canvas 3D fixo em tela cheia (acompanha das lâminas livres na Seção 1 até a Caixa na Seção 4) -->
+  <canvas id="webgpu-canvas"></canvas>
+
+  <!-- WebGPU Fallback Notice -->
+  <div id="webgpu-error" class="error-overlay hidden">
+    <div class="error-box">
+      <h2>WebGPU Não Disponível</h2>
+      <p>Seu navegador não suporta ou não está com o <strong>WebGPU</strong> habilitado.</p>
+      <p>Utilize uma versão recente do Chrome, Edge ou Firefox Nightly com WebGPU ativo.</p>
+    </div>
+  </div>
+
   <div id="smooth-wrapper">
     <div id="smooth-content">
       <!-- Seção 1 -->
@@ -46,16 +58,6 @@
 
       <!-- Seção 4: Caixa de Troféus 3D -->
       <section id="trophy-section" class="story-section viewer-section section-4" data-section="4">
-        <canvas id="webgpu-canvas"></canvas>
-
-        <!-- WebGPU Fallback Notice -->
-        <div id="webgpu-error" class="error-overlay hidden">
-          <div class="error-box">
-            <h2>WebGPU Não Disponível</h2>
-            <p>Seu navegador não suporta ou não está com o <strong>WebGPU</strong> habilitado.</p>
-            <p>Utilize uma versão recente do Chrome, Edge ou Firefox Nightly com WebGPU ativo.</p>
-          </div>
-        </div>
       </section>
     </div>
   </div>

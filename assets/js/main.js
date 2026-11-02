@@ -1,58 +1,174 @@
 /**
  * Main Application Entry Point — Dexter's Blood Slide Trophy Box (WebGPU)
  * Integrates GSAP ScrollSmoother, ScrollTrigger, and SplitText across 4 sections
- * with the interactive 3D WebGPU Trophy Box in the 4th section.
+ * with 7 free-floating blood slides in Section 1 that smoothly travel down the page
+ * and slot into the open 3D WebGPU Trophy Box in Section 4.
  */
 
 import { TrophyBoxRenderer } from './renderer.js';
 import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 
-// Initial / closed camera framing: straight-on front view (yaw 0) slightly above the box
+// Camera framing when the box is OPEN (default initial state in Section 4)
+const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 11.8, center: [0.0, 2.15, -0.45] };
+// Camera framing when the box is CLOSED
 const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
-// Entrance framing when Section 4 starts entering the viewport from below
-const INTRO_OFFSET = { yaw: -0.55, pitch: 0.32, distance: 2.8, centerY: -0.35 };
+
+/**
+ * 7 Blood Slides (all with blood specimens, indices < 13) that start arranged around
+ * the page in Section 1 matching the reference composition, and smoothly glide into
+ * their respective slots inside the open Trophy Box as the user scrolls to Section 4.
+ */
+const FLOATING_SLIDE_CONFIGS = [
+  // 1. Top-Left (medium distance, angled bottom-left to top-right)
+  {
+    slotIndex: 0,
+    ndcX: -0.68,
+    ndcY: 0.60,
+    depth: 6.4,
+    rollZ: 0.60,
+    tiltX: -0.36,
+    tiltY: 0.44,
+    driftX: 0.22,
+    driftY: -0.14,
+    spinZ: -0.25,
+    phase: 0.0
+  },
+  // 2. Mid-Left (further in background, smaller perspective, angled top-left to bottom-right)
+  {
+    slotIndex: 2,
+    ndcX: -0.72,
+    ndcY: -0.05,
+    depth: 11.2,
+    rollZ: -0.46,
+    tiltX: 0.34,
+    tiltY: 0.38,
+    driftX: 0.22,
+    driftY: 0.06,
+    spinZ: 0.22,
+    phase: 1.15
+  },
+  // 3. Bottom-Left (close macro foreground slide at bottom-left corner, angled top-left to bottom-right)
+  {
+    slotIndex: 4,
+    ndcX: -0.76,
+    ndcY: -0.68,
+    depth: 4.35,
+    rollZ: -0.50,
+    tiltX: -0.32,
+    tiltY: 0.40,
+    driftX: 0.26,
+    driftY: 0.22,
+    spinZ: 0.28,
+    phase: 2.35
+  },
+  // 4. Top-Center (far background near top edge, angled bottom-left to top-right)
+  {
+    slotIndex: 6,
+    ndcX: -0.06,
+    ndcY: 0.90,
+    depth: 9.8,
+    rollZ: 0.65,
+    tiltX: -0.38,
+    tiltY: -0.30,
+    driftX: 0.04,
+    driftY: -0.26,
+    spinZ: -0.20,
+    phase: 3.50
+  },
+  // 5. Top-Right (medium distance in upper-right corner, angled bottom-left to top-right)
+  {
+    slotIndex: 8,
+    ndcX: 0.75,
+    ndcY: 0.70,
+    depth: 6.1,
+    rollZ: 0.62,
+    tiltX: -0.35,
+    tiltY: -0.42,
+    driftX: -0.24,
+    driftY: -0.18,
+    spinZ: -0.26,
+    phase: 4.65
+  },
+  // 6. Mid-Right (hero foreground slide on right side, crisp & prominent, angled bottom-left to top-right)
+  {
+    slotIndex: 10,
+    ndcX: 0.74,
+    ndcY: -0.16,
+    depth: 4.65,
+    rollZ: 0.66,
+    tiltX: -0.34,
+    tiltY: -0.46,
+    driftX: -0.24,
+    driftY: 0.12,
+    spinZ: -0.30,
+    phase: 5.45
+  },
+  // 7. Bottom-Right (deeper background near bottom-right corner, angled top-left to bottom-right)
+  {
+    slotIndex: 12,
+    ndcX: 0.86,
+    ndcY: -0.78,
+    depth: 9.2,
+    rollZ: -0.42,
+    tiltX: 0.30,
+    tiltY: -0.36,
+    driftX: -0.28,
+    driftY: 0.24,
+    spinZ: 0.20,
+    phase: 6.20
+  }
+];
 
 class DexterBoxApp {
   constructor() {
     this.canvas = document.getElementById('webgpu-canvas');
     this.renderer = new TrophyBoxRenderer(this.canvas);
 
-    // Camera Orbit State
-    this.camera = {
-      yaw: CLOSED_VIEW.yaw + INTRO_OFFSET.yaw,
-      pitch: CLOSED_VIEW.pitch + INTRO_OFFSET.pitch,
-      distance: CLOSED_VIEW.distance + INTRO_OFFSET.distance,
-      target: [CLOSED_VIEW.center[0], CLOSED_VIEW.center[1] + INTRO_OFFSET.centerY, CLOSED_VIEW.center[2]],
-      targetYaw: CLOSED_VIEW.yaw,
-      targetPitch: CLOSED_VIEW.pitch,
-      targetDistance: CLOSED_VIEW.distance,
-      targetCenter: [...CLOSED_VIEW.center],
-      pos: [0, 3, 8]
-    };
-
-    // Scroll-driven entrance progress into Section 4 (0 = entering bottom, 1 = fully arrived)
-    this.scrollEntrance = 0.0;
-    this.isViewerVisible = false;
+    // Global scroll progress from top of Section 1 (0.0) to top of Section 4 (1.0)
+    this.pageScrollProgress = 0.0;
+    this.smoothScrollProgress = 0.0;
     this.rafId = null;
 
-    // Box State (Starts CLOSED)
-    this.isOpen = false;
-    this.openTimeline = 0.0; // 0.0 = fully closed & locked, 1.0 = fully open
-    this.lidOpenProgress = 0.0;
-    this.claspOpenProgress = 0.0;
+    // Box State (Starts OPEN as requested)
+    this.isOpen = true;
+    this.openTimeline = 1.0; // 0.0 = fully closed & locked, 1.0 = fully open
+    this.lidOpenProgress = 1.0;
+    this.claspOpenProgress = 1.0;
+
+    // Camera Orbit State (initialized for the open box + Section 1 scroll lift)
+    this.camera = {
+      yaw: OPEN_VIEW.yaw,
+      pitch: 0.16,
+      distance: OPEN_VIEW.distance,
+      target: [OPEN_VIEW.center[0], OPEN_VIEW.center[1] + 20.0, OPEN_VIEW.center[2]],
+      targetYaw: OPEN_VIEW.yaw,
+      targetPitch: OPEN_VIEW.pitch,
+      targetDistance: OPEN_VIEW.distance,
+      targetCenter: [...OPEN_VIEW.center],
+      pos: [0, 24, 10]
+    };
 
     // Slide Interaction State
     this.hoveredSlide = -1;
     this.selectedSlide = -1;
     this.isHoveringBoxTrigger = false;
 
+    // Map floating config by slide index
+    this.floatingMap = new Map();
+    FLOATING_SLIDE_CONFIGS.forEach((cfg, orderIdx) => {
+      this.floatingMap.set(cfg.slotIndex, { ...cfg, orderIdx });
+    });
+
     this.slides = [];
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const slotZ = getSlideSlotZ(i);
+      const floatCfg = this.floatingMap.get(i) || null;
       this.slides.push({
         index: i,
         slotZ,
+        isFloating: floatCfg !== null,
+        floatCfg,
         hoverProgress: 0.0,
         selectProgress: 0.0,
         worldPos: [0, 0.34, slotZ],
@@ -89,11 +205,7 @@ class DexterBoxApp {
       await this.renderer.init();
       this._bindEvents();
       this._updateUI();
-      // Render initial warm-up frame so the canvas is ready before scrolling into Section 4
-      this._renderSingleFrame(performance.now());
-      if (this.isViewerVisible) {
-        this._startRenderLoop();
-      }
+      this._startRenderLoop();
     } catch (err) {
       console.error('WebGPU initialization error:', err);
       const errOverlay = document.getElementById('webgpu-error');
@@ -139,7 +251,7 @@ class DexterBoxApp {
         gsap.set(headline, { visibility: 'visible' });
 
         if (sectionIdx === 1) {
-          // Section 1: "ESTA É A NOITE." — Entrance animation on load (not tied to scroll)
+          // Section 1: "ESTA É A NOITE." — Entrance animation on load
           const indicator = section.querySelector('.scroll-indicator');
 
           gsap.set(split.words, {
@@ -176,7 +288,6 @@ class DexterBoxApp {
               '-=0.7'
             );
 
-            // Fade out the scroll indicator naturally as the user scrolls down
             gsap.to(indicator, {
               opacity: 0,
               y: 20,
@@ -190,9 +301,7 @@ class DexterBoxApp {
             });
           }
         } else {
-          // Section 2 ("E VAI ACONTECER DE NOVO E DE NOVO.")
-          // & Section 3 ("TEM QUE ACONTECER.")
-          // Words appear progressively as the section scrolls through the viewport
+          // Section 2 & Section 3: Words appear progressively on scroll
           gsap.set(split.words, {
             opacity: 0,
             yPercent: 100,
@@ -217,32 +326,34 @@ class DexterBoxApp {
         }
       });
 
-      // Section 4: Trophy Box 3D integration & active rendering lifecycle
+      // Global scroll progress from top of Section 1 to top of Section 4 (Trophy Box)
+      const smoothContent = document.getElementById('smooth-content');
       const trophySection = document.getElementById('trophy-section');
-      if (trophySection) {
-        // Pause/resume WebGPU loop when Section 4 is near/in viewport to prevent any scroll lag
+      if (smoothContent && trophySection) {
         ScrollTrigger.create({
-          trigger: trophySection,
-          start: 'top 125%',
-          end: 'bottom -25%',
-          onToggle: (self) => {
-            this.isViewerVisible = self.isActive;
-            if (this.isViewerVisible) {
-              this._startRenderLoop();
-            } else {
-              this._stopRenderLoop();
-            }
-          }
-        });
-
-        // Smooth camera dolly & rotation as the user scrolls into Section 4
-        ScrollTrigger.create({
-          trigger: trophySection,
-          start: 'top bottom',
+          trigger: smoothContent,
+          start: 'top top',
+          endTrigger: trophySection,
           end: 'top top',
           scrub: true,
           onUpdate: (self) => {
-            this.scrollEntrance = self.progress;
+            this.pageScrollProgress = self.progress;
+            // Enable 3D pointer interaction once the user is arriving at Section 4
+            if (this.pageScrollProgress > 0.84) {
+              this.canvas.classList.add('canvas-interactive');
+            } else {
+              this.canvas.classList.remove('canvas-interactive', 'pointer-interactive');
+              this.hoveredSlide = -1;
+              // Ensure box is open if user scrolls back up above Section 4
+              if (!this.isOpen && this.pageScrollProgress < 0.78) {
+                this.isOpen = true;
+                this.selectedSlide = -1;
+                this.camera.targetYaw = OPEN_VIEW.yaw;
+                this.camera.targetPitch = OPEN_VIEW.pitch;
+                this.camera.targetDistance = OPEN_VIEW.distance;
+                this.camera.targetCenter = [...OPEN_VIEW.center];
+              }
+            }
           }
         });
       }
@@ -258,9 +369,9 @@ class DexterBoxApp {
   }
 
   _bindEvents() {
-    // Pointer controls on canvas
+    // Pointer controls on canvas (active in Section 4)
     this.canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || this.pageScrollProgress <= 0.84) return;
       this.isDragging = true;
       this.dragDistance = 0;
       this.pointerDownPos = [e.clientX, e.clientY];
@@ -269,6 +380,7 @@ class DexterBoxApp {
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
+      if (this.pageScrollProgress <= 0.84) return;
       const dx = e.clientX - this.lastPointerPos[0];
       const dy = e.clientY - this.lastPointerPos[1];
       this.lastPointerPos = [e.clientX, e.clientY];
@@ -311,14 +423,10 @@ class DexterBoxApp {
       { passive: false }
     );
 
-    // ResizeObserver avoids querying layout inside the render loop
     if (window.ResizeObserver) {
       this.resizeObserver = new ResizeObserver(() => {
         if (this.renderer.device) {
           this.renderer.resize();
-          if (!this.isViewerVisible) {
-            this._renderSingleFrame(performance.now());
-          }
         }
       });
       this.resizeObserver.observe(this.canvas);
@@ -333,31 +441,6 @@ class DexterBoxApp {
     this.rafId = requestAnimationFrame((t) => this._loop(t));
   }
 
-  _stopRenderLoop() {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-  }
-
-  _renderSingleFrame(now) {
-    if (!this.renderer.device) return;
-    const timeSec = now * 0.001;
-    this._updateKinematics(0.016, timeSec);
-    this.renderer.render({
-      viewProjMatrix: this.viewProjMatrix,
-      cameraPos: this.camera.pos,
-      lidOpenProgress: this.lidOpenProgress,
-      time: timeSec,
-      hoveredSlide: this.hoveredSlide,
-      selectedSlide: this.selectedSlide,
-      baseMatrix: this.baseMatrix,
-      lidMatrix: this.lidMatrix,
-      claspMatrix: this.claspMatrix,
-      slides: this.slides
-    });
-  }
-
   toggleBox() {
     this.isOpen = !this.isOpen;
     if (!this.isOpen) {
@@ -367,20 +450,19 @@ class DexterBoxApp {
       this.camera.targetDistance = CLOSED_VIEW.distance;
       this.camera.targetPitch = CLOSED_VIEW.pitch;
     } else {
-      // Shift camera target and distance to frame the entire open lid (Y up to 5.44) and slides
-      this.camera.targetCenter = [0.0, 2.15, -0.45];
-      this.camera.targetDistance = 11.8;
-      this.camera.targetPitch = 0.42;
+      this.camera.targetCenter = [...OPEN_VIEW.center];
+      this.camera.targetDistance = OPEN_VIEW.distance;
+      this.camera.targetPitch = OPEN_VIEW.pitch;
     }
     this._updateUI();
   }
 
   resetCamera() {
     if (this.isOpen) {
-      this.camera.targetYaw = 0.48;
-      this.camera.targetPitch = 0.42;
-      this.camera.targetDistance = 11.8;
-      this.camera.targetCenter = [0.0, 2.15, -0.45];
+      this.camera.targetYaw = OPEN_VIEW.yaw;
+      this.camera.targetPitch = OPEN_VIEW.pitch;
+      this.camera.targetDistance = OPEN_VIEW.distance;
+      this.camera.targetCenter = [...OPEN_VIEW.center];
     } else {
       this.camera.targetYaw = CLOSED_VIEW.yaw;
       this.camera.targetPitch = CLOSED_VIEW.pitch;
@@ -399,7 +481,7 @@ class DexterBoxApp {
   }
 
   _updateUI() {
-    // Reserved for optional HUD indicators if present
+    // Reserved for optional HUD indicators
   }
 
   _getRayFromPointer(clientX, clientY) {
@@ -472,7 +554,6 @@ class DexterBoxApp {
   _handleClick(clientX, clientY) {
     const hit = this._raycastScene(clientX, clientY);
 
-    // When box is closed, clicking the lid or latch opens the box
     if (!this.isOpen) {
       if (hit.hitLidOrLatch) {
         this.toggleBox();
@@ -480,27 +561,48 @@ class DexterBoxApp {
       return;
     }
 
-    // When box is open:
     if (hit.slideIndex >= 0) {
       this.selectSlide(hit.slideIndex);
       return;
     }
 
-    // Clicking the open lid or front latch closes the box
     if (hit.hitLidOrLatch) {
       this.toggleBox();
     }
   }
 
   _updateKinematics(dt, timeSec) {
-    // Smooth cubic ease-out of scroll entrance (0 -> 1 as Section 4 reaches top of viewport)
-    const introRem = 1.0 - Math.min(1.0, Math.max(0.0, this.scrollEntrance));
-    const introEase = introRem * introRem;
+    // Smoothly track pageScrollProgress (0.0 at Section 1 -> 1.0 at Section 4)
+    const scrollSmooth = 1.0 - Math.exp(-12.0 * dt);
+    this.smoothScrollProgress += (this.pageScrollProgress - this.smoothScrollProgress) * scrollSmooth;
+    const sProg = Math.min(1.0, Math.max(0.0, this.smoothScrollProgress));
 
-    const effectiveTargetYaw = this.camera.targetYaw + INTRO_OFFSET.yaw * introEase;
-    const effectiveTargetPitch = Math.min(1.48, this.camera.targetPitch + INTRO_OFFSET.pitch * introEase);
-    const effectiveTargetDist = this.camera.targetDistance + INTRO_OFFSET.distance * introEase;
-    const effectiveTargetCenterY = this.camera.targetCenter[1] + INTRO_OFFSET.centerY * introEase;
+    // Camera vertical lift & pitch transition across the 4 sections:
+    // During Sections 1..3 (sProg 0.0 -> 0.667), the camera is high above the Trophy Box
+    // so only the 7 floating blood slides are in view.
+    // As Section 4 enters (sProg 0.667 -> 1.0), the camera descends to frame the open Trophy Box.
+    let scrollLiftY = 0.0;
+    let pitchOffset = 0.0;
+    let yawOffset = 0.0;
+
+    if (sProg < 0.667) {
+      const t13 = sProg / 0.667; // 0 -> 1 across Sections 1, 2, 3
+      scrollLiftY = 20.0 - t13 * 10.2; // 20.0 -> 9.8
+      pitchOffset = -0.26; // Looking nearly horizontal into the dark studio space
+      yawOffset = 0.0;
+    } else {
+      const u4 = (sProg - 0.667) / 0.333; // 0 -> 1 as Section 4 enters viewport
+      const rem = 1.0 - Math.min(1.0, Math.max(0.0, u4));
+      const easeRem = rem * rem * (0.65 + 0.35 * rem);
+      scrollLiftY = 9.8 * easeRem;
+      pitchOffset = -0.26 * easeRem;
+      yawOffset = -0.28 * Math.sin(u4 * Math.PI) * (1.0 - u4 * 0.5);
+    }
+
+    const effectiveTargetYaw = this.camera.targetYaw + yawOffset;
+    const effectiveTargetPitch = Math.max(0.08, Math.min(1.48, this.camera.targetPitch + pitchOffset));
+    const effectiveTargetDist = this.camera.targetDistance;
+    const effectiveTargetCenterY = this.camera.targetCenter[1] + scrollLiftY;
 
     // 1. Smoothly damp camera orbit
     const camSmooth = 1.0 - Math.exp(-10.0 * dt);
@@ -522,10 +624,20 @@ class DexterBoxApp {
     this.camera.pos[2] = this.camera.target[2] + this.camera.distance * cosP * cosY;
 
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
-    Mat4.perspectiveZO(this.projMatrix, (38 * Math.PI) / 180, aspect, 0.1, 45.0);
+    const fovy = (38 * Math.PI) / 180;
+    Mat4.perspectiveZO(this.projMatrix, fovy, aspect, 0.1, 45.0);
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
     Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
+
+    // Camera basis vectors in world space for positioning the 7 floating slides in camera frustum space
+    // Forward vector from camera.pos toward camera.target:
+    const camForward = [-cosP * sinY, -sinP, -cosP * cosY];
+    // Right vector:
+    const camRight = [cosY, 0.0, -sinY];
+    // Up vector = Right x Forward:
+    const camUp = [-sinP * sinY, cosP, -sinP * cosY];
+    const tanHalfFov = Math.tan(fovy * 0.5);
 
     // 2. Box Open/Close Two-Stage Animation Timeline
     const targetTimeline = this.isOpen ? 1.0 : 0.0;
@@ -563,8 +675,11 @@ class DexterBoxApp {
     const claspSwingAngle = -Math.sin(this.claspOpenProgress * Math.PI * 0.5) * 0.95;
     Mat4.rotateX(this.claspMatrix, this.claspMatrix, claspSwingAngle);
 
-    // 6. Update all 24 Glass Slides
+    // 6. Update all 24 Glass Slides (including the 7 free-floating blood slides)
     const slideSmooth = 1.0 - Math.exp(-12.0 * dt);
+    const travel = Math.min(1.0, sProg / 0.68);
+    const travelSmooth = travel * travel * (3.0 - 2.0 * travel);
+
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = this.slides[i];
       const targetHover = (this.isOpen && this.hoveredSlide === i && this.selectedSlide !== i) ? 1.0 : 0.0;
@@ -582,34 +697,107 @@ class DexterBoxApp {
       }
 
       const floatOsc = s.selectProgress > 0.01 ? Math.sin(timeSec * 2.6) * 0.025 * s.selectProgress : 0.0;
-      const posY = 0.34 + s.hoverProgress * 0.19 + neighborWave + s.selectProgress * 0.95 + floatOsc;
-      const posZ = s.slotZ + s.selectProgress * (0.35 - s.slotZ * 0.35);
-      const posX = 0.0;
+      const slotPosY = 0.34 + s.hoverProgress * 0.19 + neighborWave + s.selectProgress * 0.95 + floatOsc;
+      const slotPosZ = s.slotZ + s.selectProgress * (0.35 - s.slotZ * 0.35);
+      const slotPosX = 0.0;
 
-      s.worldPos[0] = posX;
-      s.worldPos[1] = posY;
-      s.worldPos[2] = posZ;
+      if (!s.isFloating) {
+        // Stationary slide already inside the Trophy Box
+        s.worldPos[0] = slotPosX;
+        s.worldPos[1] = slotPosY;
+        s.worldPos[2] = slotPosZ;
+
+        Mat4.fromTranslation(s.modelMatrix, s.worldPos);
+        if (s.selectProgress > 0.001) {
+          Mat4.rotateY(s.modelMatrix, s.modelMatrix, s.selectProgress * 0.25);
+          Mat4.rotateX(s.modelMatrix, s.modelMatrix, -s.selectProgress * 0.18);
+        }
+        Mat4.invert(s.invModelMatrix, s.modelMatrix);
+        continue;
+      }
+
+      // One of the 7 free-floating blood slides:
+      const cfg = s.floatCfg;
+      const k = cfg.orderIdx; // 0..6
+
+      // Staggered entry window as the user scrolls from Section 3 into Section 4
+      const entryStart = 0.58 + k * 0.024;
+      const entryEnd = 0.87 + k * 0.020;
+      const rawEntry = Math.min(1.0, Math.max(0.0, (sProg - entryStart) / (entryEnd - entryStart)));
+
+      // Horizontal & angular alignment finishes by rawEntry = 0.80 so the slide is 100% aligned
+      // directly above its slot before descending between the rack comb teeth
+      const rawAlign = Math.min(1.0, rawEntry / 0.80);
+      const alignT = rawAlign * rawAlign * (3.0 - 2.0 * rawAlign);
+      const rotWeight = 1.0 - alignT;
+
+      // Vertical drop into the slot finishes at rawEntry = 1.0
+      const rawDrop = Math.min(1.0, Math.max(0.0, (rawEntry - 0.66) / 0.34));
+      const dropT = rawDrop * rawDrop * (3.0 - 2.0 * rawDrop);
+
+      // Idle zero-gravity floating oscillation (damps out as slide aligns with box)
+      const idleX = Math.sin(timeSec * 1.15 + cfg.phase) * 0.016 * rotWeight;
+      const idleY = Math.cos(timeSec * 1.35 + cfg.phase * 1.3) * 0.022 * rotWeight;
+      const idleRoll = Math.sin(timeSec * 0.95 + cfg.phase) * 0.038 * rotWeight;
+      const idleTilt = Math.cos(timeSec * 1.10 + cfg.phase) * 0.028 * rotWeight;
+
+      // Screen-relative trajectory across Sections 1 -> 2 -> 3
+      const swayX = Math.sin(sProg * Math.PI * 1.5 + cfg.phase) * 0.065 * travelSmooth;
+      const swayY = Math.cos(sProg * Math.PI * 1.2 + cfg.phase) * 0.065 * travelSmooth;
+      const curNdcX = cfg.ndcX + cfg.driftX * travelSmooth + swayX + idleX;
+      const curNdcY = cfg.ndcY + cfg.driftY * travelSmooth + swayY + idleY;
+      const curDepth = cfg.depth + (6.2 - cfg.depth) * travelSmooth * 0.42;
+
+      const halfH = curDepth * tanHalfFov;
+      const halfW = halfH * aspect;
+      const rx = curNdcX * halfW;
+      const uy = curNdcY * halfH;
+
+      const floatPosX = this.camera.pos[0] + camForward[0] * curDepth + camRight[0] * rx + camUp[0] * uy;
+      const floatPosY = this.camera.pos[1] + camForward[1] * curDepth + camRight[1] * rx + camUp[1] * uy;
+      const floatPosZ = this.camera.pos[2] + camForward[2] * curDepth + camRight[2] * rx + camUp[2] * uy;
+
+      // Blend from camera-floating position to overhead hover point, then vertically into slot
+      const hoverAboveY = 1.26 + (6 - k) * 0.045;
+      const arcLiftY = Math.sin(rawAlign * Math.PI) * 0.55;
+      const approachY = floatPosY + (hoverAboveY - floatPosY) * alignT + arcLiftY;
+
+      s.worldPos[0] = floatPosX * (1.0 - alignT) + slotPosX * alignT;
+      s.worldPos[1] = approachY * (1.0 - dropT) + slotPosY * dropT;
+      s.worldPos[2] = floatPosZ * (1.0 - alignT) + slotPosZ * alignT;
 
       Mat4.fromTranslation(s.modelMatrix, s.worldPos);
+
+      if (rotWeight > 0.0001) {
+        const curRollZ = (cfg.rollZ + cfg.spinZ * travelSmooth + idleRoll) * rotWeight;
+        const curTiltX = (cfg.tiltX + 0.10 * travelSmooth + idleTilt) * rotWeight;
+        const curTiltY = (cfg.tiltY * (1.0 - 0.30 * travelSmooth) + idleTilt * 0.8) * rotWeight;
+
+        Mat4.rotateY(s.modelMatrix, s.modelMatrix, this.camera.yaw * rotWeight);
+        Mat4.rotateX(s.modelMatrix, s.modelMatrix, -this.camera.pitch * rotWeight);
+        Mat4.rotateZ(s.modelMatrix, s.modelMatrix, curRollZ);
+        Mat4.rotateX(s.modelMatrix, s.modelMatrix, curTiltX);
+        Mat4.rotateY(s.modelMatrix, s.modelMatrix, curTiltY);
+      }
+
       if (s.selectProgress > 0.001) {
         Mat4.rotateY(s.modelMatrix, s.modelMatrix, s.selectProgress * 0.25);
         Mat4.rotateX(s.modelMatrix, s.modelMatrix, -s.selectProgress * 0.18);
       }
+
       Mat4.invert(s.invModelMatrix, s.modelMatrix);
     }
   }
 
   _loop(now) {
-    if (!this.isViewerVisible) {
-      this.rafId = null;
-      return;
-    }
-
     const dt = Math.min(0.05, (now - this.lastFrameTime) * 0.001);
     this.lastFrameTime = now;
     const timeSec = now * 0.001;
 
     this._updateKinematics(dt, timeSec);
+
+    // Only draw the Trophy Box and stationary slides once approaching Section 4
+    const boxVisible = this.smoothScrollProgress > 0.52;
 
     this.renderer.render({
       viewProjMatrix: this.viewProjMatrix,
@@ -621,7 +809,8 @@ class DexterBoxApp {
       baseMatrix: this.baseMatrix,
       lidMatrix: this.lidMatrix,
       claspMatrix: this.claspMatrix,
-      slides: this.slides
+      slides: this.slides,
+      boxVisible
     });
 
     this.rafId = requestAnimationFrame((t) => this._loop(t));

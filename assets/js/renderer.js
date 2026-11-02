@@ -12,7 +12,6 @@ import {
   buildLatchClaspMesh,
   buildSingleSlideMesh
 } from './geometry.js';
-import { Mat4 } from './math.js';
 
 const OBJECT_UNIFORM_SIZE = 144; // 2 * mat4 (128B) + vec4 (16B) = 144B
 const OBJECT_UNIFORM_STRIDE = 256; // WebGPU minUniformBufferOffsetAlignment = 256 bytes
@@ -322,7 +321,7 @@ export class TrophyBoxRenderer {
       }
     });
 
-    // 2. Transparent Glass Slide Pipeline (sorted back-to-front, depth test on, depth write on for crisp blood drops)
+    // 2. Transparent Glass Slide Pipeline (sorted back-to-front, depth test on)
     this.glassPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: {
@@ -451,6 +450,8 @@ export class TrophyBoxRenderer {
       this.resize();
     }
 
+    const boxVisible = sceneState.boxVisible !== false;
+
     // 1. Update Scene Uniforms
     const sceneData = new Float32Array(24);
     sceneData.set(sceneState.viewProjMatrix, 0);
@@ -465,17 +466,19 @@ export class TrophyBoxRenderer {
     this.device.queue.writeBuffer(this.sceneUniformBuffer, 0, sceneData);
 
     // 2. Write Object Uniforms:
-    // Slot 0: Base
-    this._writeObjectUniform(0, sceneState.baseMatrix, -1, 0, 0, 0);
-    // Slot 1: Lid
-    this._writeObjectUniform(1, sceneState.lidMatrix, -1, 0, 0, 0);
-    // Slot 2: Clasp Loop
-    this._writeObjectUniform(2, sceneState.claspMatrix, -1, 0, 0, 0);
+    if (boxVisible) {
+      // Slot 0: Base
+      this._writeObjectUniform(0, sceneState.baseMatrix, -1, 0, 0, 0);
+      // Slot 1: Lid
+      this._writeObjectUniform(1, sceneState.lidMatrix, -1, 0, 0, 0);
+      // Slot 2: Clasp Loop
+      this._writeObjectUniform(2, sceneState.claspMatrix, -1, 0, 0, 0);
 
-    // Mirrored floor reflections (seed = -1 flags the reflection path in the shaders)
-    this._writeObjectUniform(this.reflSlotBase + 0, sceneState.baseMatrix, -1, 0, 0, -1);
-    this._writeObjectUniform(this.reflSlotBase + 1, sceneState.lidMatrix, -1, 0, 0, -1);
-    this._writeObjectUniform(this.reflSlotBase + 2, sceneState.claspMatrix, -1, 0, 0, -1);
+      // Mirrored floor reflections (seed = -1 flags the reflection path in the shaders)
+      this._writeObjectUniform(this.reflSlotBase + 0, sceneState.baseMatrix, -1, 0, 0, -1);
+      this._writeObjectUniform(this.reflSlotBase + 1, sceneState.lidMatrix, -1, 0, 0, -1);
+      this._writeObjectUniform(this.reflSlotBase + 2, sceneState.claspMatrix, -1, 0, 0, -1);
+    }
 
     // Slots 3..26: 24 Slides
     const slideOrder = [];
@@ -485,6 +488,9 @@ export class TrophyBoxRenderer {
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = sceneState.slides[i];
+      if (!boxVisible && !s.isFloating) {
+        continue;
+      }
       const slotIdx = 3 + i;
       this._writeObjectUniform(
         slotIdx,
@@ -532,41 +538,43 @@ export class TrophyBoxRenderer {
 
     renderPass.setBindGroup(0, this.sceneBindGroup);
 
-    // Floor reflection: depth pre-pass, then faded color on the nearest reflected surfaces.
-    // The (semi-transparent) floor shadow and the real box are drawn on top afterwards.
-    const reflMeshes = [this.baseMesh, this.lidMesh, this.claspMesh];
-    for (const pipeline of [this.reflDepthPipeline, this.reflColorPipeline]) {
-      renderPass.setPipeline(pipeline);
-      for (let m = 0; m < reflMeshes.length; m++) {
-        renderPass.setBindGroup(1, this.objectBindGroup, [(this.reflSlotBase + m) * OBJECT_UNIFORM_STRIDE]);
-        renderPass.setVertexBuffer(0, reflMeshes[m].vbo);
-        renderPass.setIndexBuffer(reflMeshes[m].ibo, 'uint32');
-        renderPass.drawIndexed(reflMeshes[m].indexCount);
+    if (boxVisible) {
+      // Floor reflection: depth pre-pass, then faded color on the nearest reflected surfaces.
+      // The (semi-transparent) floor shadow and the real box are drawn on top afterwards.
+      const reflMeshes = [this.baseMesh, this.lidMesh, this.claspMesh];
+      for (const pipeline of [this.reflDepthPipeline, this.reflColorPipeline]) {
+        renderPass.setPipeline(pipeline);
+        for (let m = 0; m < reflMeshes.length; m++) {
+          renderPass.setBindGroup(1, this.objectBindGroup, [(this.reflSlotBase + m) * OBJECT_UNIFORM_STRIDE]);
+          renderPass.setVertexBuffer(0, reflMeshes[m].vbo);
+          renderPass.setIndexBuffer(reflMeshes[m].ibo, 'uint32');
+          renderPass.drawIndexed(reflMeshes[m].indexCount);
+        }
       }
+
+      // Draw Solid Meshes (Base, Lid, Latch Clasp)
+      renderPass.setPipeline(this.solidPipeline);
+
+      // Base (Slot 0)
+      renderPass.setBindGroup(1, this.objectBindGroup, [0 * OBJECT_UNIFORM_STRIDE]);
+      renderPass.setVertexBuffer(0, this.baseMesh.vbo);
+      renderPass.setIndexBuffer(this.baseMesh.ibo, 'uint32');
+      renderPass.drawIndexed(this.baseMesh.indexCount);
+
+      // Lid (Slot 1)
+      renderPass.setBindGroup(1, this.objectBindGroup, [1 * OBJECT_UNIFORM_STRIDE]);
+      renderPass.setVertexBuffer(0, this.lidMesh.vbo);
+      renderPass.setIndexBuffer(this.lidMesh.ibo, 'uint32');
+      renderPass.drawIndexed(this.lidMesh.indexCount);
+
+      // Latch Clasp Loop (Slot 2)
+      renderPass.setBindGroup(1, this.objectBindGroup, [2 * OBJECT_UNIFORM_STRIDE]);
+      renderPass.setVertexBuffer(0, this.claspMesh.vbo);
+      renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
+      renderPass.drawIndexed(this.claspMesh.indexCount);
     }
 
-    // Draw Solid Meshes (Base, Lid, Latch Clasp)
-    renderPass.setPipeline(this.solidPipeline);
-
-    // Base (Slot 0)
-    renderPass.setBindGroup(1, this.objectBindGroup, [0 * OBJECT_UNIFORM_STRIDE]);
-    renderPass.setVertexBuffer(0, this.baseMesh.vbo);
-    renderPass.setIndexBuffer(this.baseMesh.ibo, 'uint32');
-    renderPass.drawIndexed(this.baseMesh.indexCount);
-
-    // Lid (Slot 1)
-    renderPass.setBindGroup(1, this.objectBindGroup, [1 * OBJECT_UNIFORM_STRIDE]);
-    renderPass.setVertexBuffer(0, this.lidMesh.vbo);
-    renderPass.setIndexBuffer(this.lidMesh.ibo, 'uint32');
-    renderPass.drawIndexed(this.lidMesh.indexCount);
-
-    // Latch Clasp Loop (Slot 2)
-    renderPass.setBindGroup(1, this.objectBindGroup, [2 * OBJECT_UNIFORM_STRIDE]);
-    renderPass.setVertexBuffer(0, this.claspMesh.vbo);
-    renderPass.setIndexBuffer(this.claspMesh.ibo, 'uint32');
-    renderPass.drawIndexed(this.claspMesh.indexCount);
-
-    // Draw 24 Glass Slides sorted back-to-front
+    // Draw Glass Slides sorted back-to-front
     renderPass.setPipeline(this.glassPipeline);
     renderPass.setVertexBuffer(0, this.slideMesh.vbo);
     renderPass.setIndexBuffer(this.slideMesh.ibo, 'uint32');
