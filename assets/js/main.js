@@ -824,5 +824,6 @@ class DexterBoxApp {
 
 window.addEventListener('DOMContentLoaded', () => {
   const app = new DexterBoxApp();
+  window.__dexterApp = app;
   app.start();
 });

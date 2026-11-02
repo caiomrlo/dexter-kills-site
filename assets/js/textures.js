@@ -148,18 +148,18 @@ export function createWoodPBRMaps(maxAnisotropy = 8) {
       const poreMask = smoothstep(0.75, 0.96, poreNoise);
 
       const mixFactor = broadBand * 0.35 + fineStrands * 0.65;
-      let r = 46 + mixFactor * 40;
-      let g = 12 + mixFactor * 13;
-      let b = 5 + mixFactor * 6;
+      let r = 82 + mixFactor * 68;
+      let g = 22 + mixFactor * 22;
+      let b = 10 + mixFactor * 10;
 
-      const amber = Math.pow(fineStrands, 2.2) * 0.25;
-      r += amber * 34;
-      g += amber * 11;
-      b += amber * 4;
+      const amber = Math.pow(fineStrands, 2.0) * 0.35;
+      r += amber * 48;
+      g += amber * 16;
+      b += amber * 6;
 
-      r *= (1.0 - poreMask * 0.48);
-      g *= (1.0 - poreMask * 0.52);
-      b *= (1.0 - poreMask * 0.52);
+      r *= (1.0 - poreMask * 0.38);
+      g *= (1.0 - poreMask * 0.42);
+      b *= (1.0 - poreMask * 0.42);
 
       const idx = (y * width + x) * 4;
       aData[idx] = Math.min(255, Math.max(0, Math.round(r)));
@@ -228,9 +228,9 @@ export function createBrassPBRMaps(maxAnisotropy = 8) {
       const brush = noise2D(u * 16.0, v * 160.0, 3.1) * 0.65 + noise2D(u * 48.0, v * 280.0, 9.2) * 0.35;
       const patina = fbm2D(u * 5.0, v * 5.0, 3, 7.7);
 
-      const baseR = 230 - patina * 18 - (1.0 - brush) * 12;
-      const baseG = 184 - patina * 16 - (1.0 - brush) * 10;
-      const baseB = 80 - patina * 12 - (1.0 - brush) * 6;
+      const baseR = 240 - patina * 16 - (1.0 - brush) * 10;
+      const baseG = 194 - patina * 14 - (1.0 - brush) * 8;
+      const baseB = 88 - patina * 10 - (1.0 - brush) * 5;
 
       const idx = (y * width + x) * 4;
       aData[idx] = Math.round(baseR);

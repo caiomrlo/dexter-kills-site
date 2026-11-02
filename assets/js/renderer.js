@@ -13,7 +13,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 import {
   BOX_SPECS,
@@ -46,8 +46,7 @@ export class TrophyBoxRenderer {
     this.baseGroup = null;
     this.lidGroup = null;
     this.claspGroup = null;
-    this.reflectionWrapper = null;
-    this.floorShadowMesh = null;
+    this.reflector = null;
 
     this.slideObjects = [];
     this.camLightRig = null;
@@ -67,7 +66,7 @@ export class TrophyBoxRenderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.16;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.device = this.renderer;
@@ -124,7 +123,7 @@ export class TrophyBoxRenderer {
     addPanel([7.5, 3.5, -1.0], [0, 0, 0], 5.0, 4.0, 0xffeedd, 0.75);
     addPanel([0.0, -6.5, 0.0], [0, 0, 0], 12.0, 12.0, 0xd8cfc4, 0.65);
 
-    const envRT = pmremGenerator.fromScene(envScene, 0.045);
+    const envRT = pmremGenerator.fromScene(envScene, 0.03);
     this.scene.environment = envRT.texture;
     pmremGenerator.dispose();
   }
@@ -143,17 +142,17 @@ export class TrophyBoxRenderer {
     this.woodMat = new THREE.MeshPhysicalMaterial({
       map: woodMaps.map,
       normalMap: woodMaps.normalMap,
-      normalScale: new THREE.Vector2(0.28, 0.28),
+      normalScale: new THREE.Vector2(0.24, 0.24),
       roughnessMap: woodMaps.roughnessMap,
-      roughness: 0.36,
+      roughness: 0.26,
       metalness: 0.02,
-      clearcoat: 0.24,
-      clearcoatRoughness: 0.36,
+      clearcoat: 0.45,
+      clearcoatRoughness: 0.20,
       clearcoatNormalMap: woodMaps.normalMap,
-      clearcoatNormalScale: new THREE.Vector2(0.15, 0.15),
+      clearcoatNormalScale: new THREE.Vector2(0.12, 0.12),
       ior: 1.48,
-      reflectivity: 0.45,
-      envMapIntensity: 0.58
+      reflectivity: 0.65,
+      envMapIntensity: 1.10
     });
 
     // 2. Brushed Antique Brass Hardware
@@ -162,11 +161,11 @@ export class TrophyBoxRenderer {
       normalMap: brassMaps.normalMap,
       normalScale: new THREE.Vector2(0.18, 0.18),
       roughnessMap: brassMaps.roughnessMap,
-      roughness: 0.24,
-      metalness: 0.90,
-      clearcoat: 0.22,
-      clearcoatRoughness: 0.22,
-      envMapIntensity: 1.15
+      roughness: 0.20,
+      metalness: 0.92,
+      clearcoat: 0.32,
+      clearcoatRoughness: 0.16,
+      envMapIntensity: 1.50
     });
 
     // Dark recessed screw slot material
@@ -345,56 +344,110 @@ export class TrophyBoxRenderer {
   }
 
   /**
-   * Builds a clean, artifact-free glossy studio floor reflection of the outer base & front brass latch
+   * Builds an ultra-smooth, organic studio floor reflection and ambient contact shadow.
+   * Uses Reflector with a custom 6-tap satin glossy shader and distance-based soft fade,
+   * dissolving seamlessly into the pitch-black void with zero square edges or harsh borders.
    */
   _buildStudioFloorAndReflection() {
-    this.reflectionWrapper = new THREE.Group();
-    this.reflectionWrapper.matrixAutoUpdate = false;
-
-    const hl = BOX_SPECS.length / 2;
-    const reflH = 0.24;
-
-    const reflWoodMat = this.woodMat.clone();
-    reflWoodMat.color = new THREE.Color(0x363636);
-    reflWoodMat.envMapIntensity = 0.16;
-    reflWoodMat.clearcoat = 0.15;
-
-    const reflBrassMat = this.brassMat.clone();
-    reflBrassMat.color = new THREE.Color(0x3e341e);
-    reflBrassMat.envMapIntensity = 0.22;
-
-    const baseReflGeom = new RoundedBoxGeometry(BOX_SPECS.width, reflH, BOX_SPECS.length, 2, 0.02);
-    const baseReflMesh = new THREE.Mesh(baseReflGeom, reflWoodMat);
-    baseReflMesh.position.set(0, -reflH * 0.5 - 0.004, 0);
-    this.reflectionWrapper.add(baseReflMesh);
-
-    const latchReflGeom = new RoundedBoxGeometry(0.46, 0.18, 0.025, 2, 0.006);
-    const latchReflMesh = new THREE.Mesh(latchReflGeom, reflBrassMat);
-    latchReflMesh.position.set(0, -0.14, hl + 0.01);
-    this.reflectionWrapper.add(latchReflMesh);
-
-    this.boxRoot.add(this.reflectionWrapper);
-
-    const floorGeom = new THREE.PlaneGeometry(14, 14);
-    floorGeom.rotateX(-Math.PI * 0.5);
-    const shadowMat = new THREE.ShadowMaterial({
-      opacity: 0.55,
-      color: 0x000000
+    const floorGeom = new THREE.PlaneGeometry(16, 16);
+    this.reflector = new Reflector(floorGeom, {
+      clipBias: 0.003,
+      textureWidth: 512,
+      textureHeight: 512,
+      color: 0x333333
     });
-    this.floorShadowMesh = new THREE.Mesh(floorGeom, shadowMat);
-    this.floorShadowMesh.position.y = -0.001;
-    this.floorShadowMesh.receiveShadow = true;
-    this.boxRoot.add(this.floorShadowMesh);
+    this.reflector.rotation.x = -Math.PI * 0.5;
+    this.reflector.position.y = -0.002;
+
+    const customShader = {
+      uniforms: {
+        color: { value: new THREE.Color(0x333333) },
+        tDiffuse: { value: null },
+        textureMatrix: { value: new THREE.Matrix4() }
+      },
+      vertexShader: `
+        uniform mat4 textureMatrix;
+        varying vec4 vReflCoord;
+        varying vec3 vWorldPos;
+        
+        void main() {
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          vReflCoord = textureMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 color;
+        uniform sampler2D tDiffuse;
+        varying vec4 vReflCoord;
+        varying vec3 vWorldPos;
+        
+        void main() {
+          vec4 coord = vReflCoord;
+          vec2 uv = coord.xy / coord.w;
+          
+          // 6-tap soft jittered sample for satin glossy acrylic reflection
+          vec4 sum = vec4(0.0);
+          float blur = 0.0028;
+          sum += texture2D(tDiffuse, uv + vec2(-blur, -blur) * 0.7);
+          sum += texture2D(tDiffuse, uv + vec2( blur, -blur) * 0.7);
+          sum += texture2D(tDiffuse, uv + vec2(-blur,  blur) * 0.7);
+          sum += texture2D(tDiffuse, uv + vec2( blur,  blur) * 0.7);
+          sum += texture2D(tDiffuse, uv) * 2.0;
+          vec4 reflSample = sum / 6.0;
+          
+          // Distance from box footprint
+          vec2 boxHalf = vec2(0.96, 1.50);
+          vec2 dBox = max(abs(vWorldPos.xz) - boxHalf, vec2(0.0));
+          float dist = length(dBox);
+          
+          // Smooth radial falloff into pitch-black background (reaches 0 by dist = 2.5)
+          float radialFade = 1.0 - smoothstep(0.0, 2.5, dist);
+          radialFade = radialFade * radialFade;
+          
+          // Deep contact shadow directly under the box base
+          float contactAO = exp(-dist * 14.0) * 0.85 + exp(-dist * 2.8) * 0.25;
+          
+          // Soften and dim the reflection so it looks like dark polished studio obsidian/acrylic
+          vec3 reflColor = reflSample.rgb * 0.40 * radialFade;
+          
+          // Shadow darkens the surface
+          reflColor = reflColor * (1.0 - contactAO * 0.75);
+          
+          // Alpha blends smoothly into the CSS black background (zero square border!)
+          float alpha = clamp(radialFade * 0.55 + contactAO * 0.75, 0.0, 1.0);
+          
+          gl_FragColor = vec4(reflColor, alpha);
+          
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `
+    };
+
+    const customMat = new THREE.ShaderMaterial({
+      uniforms: customShader.uniforms,
+      vertexShader: customShader.vertexShader,
+      fragmentShader: customShader.fragmentShader,
+      transparent: true,
+      depthWrite: false
+    });
+
+    customMat.uniforms.textureMatrix = this.reflector.material.uniforms.textureMatrix;
+    customMat.uniforms.tDiffuse = this.reflector.material.uniforms.tDiffuse;
+    this.reflector.material = customMat;
+
+    this.boxRoot.add(this.reflector);
   }
 
   _setupLights() {
     // 1. Ambient / Hemisphere Studio Base
-    const hemiLight = new THREE.HemisphereLight(0xfff5e8, 0x221713, 0.75);
+    const hemiLight = new THREE.HemisphereLight(0xfff6ea, 0x321a14, 1.15);
     this.scene.add(hemiLight);
 
     // 2. Main Studio Key Light (with high-res PCFSoftShadowMap for the Trophy Box)
-    this.keyLight = new THREE.DirectionalLight(0xfff4e6, 1.35);
-    this.keyLight.position.set(-1.6, 6.4, 3.8);
+    this.keyLight = new THREE.DirectionalLight(0xfff5e8, 2.3);
+    this.keyLight.position.set(-1.8, 6.5, 4.2);
     this.keyLight.castShadow = true;
     this.keyLight.shadow.mapSize.width = 2048;
     this.keyLight.shadow.mapSize.height = 2048;
@@ -411,22 +464,27 @@ export class TrophyBoxRenderer {
     this.scene.add(this.keyLight);
 
     // 3. Studio Fill Light (right side)
-    const fillLight = new THREE.DirectionalLight(0xd8e6f6, 0.72);
-    fillLight.position.set(3.8, 4.2, 2.2);
+    const fillLight = new THREE.DirectionalLight(0xd8e8f8, 1.5);
+    fillLight.position.set(2.8, 4.5, 4.5);
     this.scene.add(fillLight);
 
-    // 4. Back Rim Light (illuminates open lid edge & glass slide bevels)
-    const rimLight = new THREE.DirectionalLight(0xffeed9, 0.78);
-    rimLight.position.set(0.0, 3.8, -4.8);
+    // 4. Dedicated Front Fill Light for the front face & gold latch
+    const frontFill = new THREE.DirectionalLight(0xfff2e0, 1.35);
+    frontFill.position.set(0.2, 3.2, 5.8);
+    this.scene.add(frontFill);
+
+    // 5. Back Rim Light (illuminates open lid edge & glass slide bevels)
+    const rimLight = new THREE.DirectionalLight(0xffeed9, 1.15);
+    rimLight.position.set(0.0, 4.2, -4.8);
     this.scene.add(rimLight);
 
-    // 5. Soft Camera-Following Light Rig for the 7 Free-Floating Blood Slides in Sections 1-3
+    // 6. Soft Camera-Following Light Rig for the 7 Free-Floating Blood Slides in Sections 1-3
     this.camLightRig = new THREE.Group();
-    this.floatKeyLight = new THREE.PointLight(0xfff0dd, 3.8, 22.0, 1.2);
-    this.floatKeyLight.position.set(3.5, 2.5, -2.2);
+    this.floatKeyLight = new THREE.PointLight(0xfff0dd, 4.2, 22.0, 1.2);
+    this.floatKeyLight.position.set(3.5, 2.8, -1.8);
     this.camLightRig.add(this.floatKeyLight);
 
-    this.floatRimLight = new THREE.PointLight(0xd8e8ff, 3.2, 22.0, 1.2);
+    this.floatRimLight = new THREE.PointLight(0xd8e8ff, 3.5, 22.0, 1.2);
     this.floatRimLight.position.set(-3.8, -1.8, -2.5);
     this.camLightRig.add(this.floatRimLight);
 
@@ -523,8 +581,9 @@ export class TrophyBoxRenderer {
       this.claspGroup.matrix.fromArray(sceneState.claspMatrix);
       this.claspGroup.updateMatrixWorld(true);
 
-      this.reflectionWrapper.matrix.fromArray(sceneState.baseMatrix);
-      this.reflectionWrapper.updateMatrixWorld(true);
+      if (this.reflector) {
+        this.reflector.visible = true;
+      }
 
       // Modulate interior ambient intensity based on lidOpenProgress so closing the box darkens interior
       const lidFactor = Math.max(0.25, sceneState.lidOpenProgress);
