@@ -1,6 +1,4 @@
 :root {
-  --bg-studio-center: #121214;
-  --bg-studio-edge: #050506;
   --hud-bg: rgba(18, 16, 16, 0.78);
   --hud-border: rgba(255, 255, 255, 0.12);
   --accent-gold: #e0b354;
@@ -25,21 +23,11 @@ html, body {
   width: 100%;
   min-height: 100%;
   overflow-x: hidden;
-  background-color: var(--bg-studio-edge);
+  background-color: #000000;
   font-family: var(--font-sans);
   color: var(--text-light);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: radial-gradient(circle at 50% 45%, var(--bg-studio-center) 0%, var(--bg-studio-edge) 100%);
-  pointer-events: none;
-  z-index: -1;
-  transform: translateZ(0);
 }
 
 #smooth-wrapper {
@@ -67,16 +55,6 @@ body::before {
   justify-content: center;
   padding: clamp(24px, 6vw, 96px);
   overflow: hidden;
-}
-
-/* Subtle crimson ambient glow behind typographic sections */
-.story-section::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(139, 13, 20, 0.08) 0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
 }
 
 .section-inner {
