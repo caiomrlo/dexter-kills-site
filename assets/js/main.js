@@ -9,8 +9,8 @@ import { TrophyBoxRenderer } from './renderer.js';
 import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 
-// Camera framing when the box is OPEN (default initial state in Section 4)
-const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 11.8, center: [0.0, 2.15, -0.45] };
+// Camera framing when the box is OPEN (closer framing filling more vertical viewport)
+const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 9.1, center: [0.0, 1.58, -0.20] };
 // Camera framing when the box is CLOSED
 const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
 
