@@ -1,6 +1,6 @@
 :root {
-  --bg-studio-center: #fbfbfc;
-  --bg-studio-edge: #e4e5e8;
+  --bg-studio-center: #121214;
+  --bg-studio-edge: #050506;
   --hud-bg: rgba(18, 16, 16, 0.78);
   --hud-border: rgba(255, 255, 255, 0.12);
   --accent-gold: #e0b354;
@@ -69,6 +69,7 @@ html, body {
   font-size: clamp(0.85rem, 1.1vw, 1.1rem);
   line-height: 1.2;
   letter-spacing: 0.005em;
+  color: var(--text-light);
 }
 
 .headline span {
@@ -76,20 +77,19 @@ html, body {
 }
 
 .headline .line-blood {
-  background: linear-gradient(100deg, #b3121b 0%, #7a0a10 55%, #4a0409 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+  color: #f8fafc;
   margin-bottom: 0.1em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
 }
 
 .headline .line-gray {
-  color: #555559;
+  color: #a8a29e;
   font-size: 0.85em;
   font-weight: 500;
   margin-left: 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
+
 /* Error overlay */
 .error-overlay {
   position: absolute;
