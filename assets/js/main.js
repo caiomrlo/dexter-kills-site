@@ -284,6 +284,7 @@ class DexterBoxApp {
     if (this.killPanel && KILLS[this.killIndex]) {
       this.killPanel.setKill(KILLS[this.killIndex], this.killIndex, KILLS.length);
       this.killPanel.onNext = () => this.stepKill(1);
+      this.killPanel.onPrev = () => this.stepKill(-1);
     }
 
     try {

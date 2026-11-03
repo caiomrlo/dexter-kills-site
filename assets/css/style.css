@@ -335,7 +335,7 @@ html, body {
 .kill-panel {
   position: fixed;
   z-index: 8;
-  top: 50%;
+  top: calc(50% - 32px);
   left: clamp(20px, 6vw, 112px);
   width: min(700px, 50vw);
   translate: 0 -50%;
@@ -406,33 +406,6 @@ html, body {
 
 .kill-id {
   min-width: 0;
-}
-
-.kill-label {
-  display: flex;
-  align-items: center;
-  gap: 0.6em;
-  font-family: var(--font-sans);
-  font-size: clamp(0.72rem, 0.9vw, 0.9rem);
-  font-weight: 500;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: rgba(232, 225, 214, 0.78);
-}
-
-.kill-label strong {
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--text-warm-ivory);
-}
-
-.kill-rule {
-  flex: 1 1 auto;
-  min-width: 40px;
-  height: 1px;
-  margin-left: 0.4em;
-  background: linear-gradient(90deg, var(--accent-blood-bright), rgba(184, 20, 29, 0));
-  transform-origin: 0 50%;
 }
 
 .kill-name {
@@ -529,19 +502,6 @@ html, body {
   color: var(--accent-blood-bright);
 }
 
-.kill-episode-label {
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-}
-
-.kill-episode i {
-  width: 1px;
-  height: 26px;
-  background: rgba(232, 225, 214, 0.18);
-}
-
 .kill-episode-value {
   font-family: 'Barlow Condensed', var(--font-sans);
   font-style: italic;
@@ -562,14 +522,59 @@ html, body {
   background: radial-gradient(ellipse at 50% 40%, #2a2420, #120f0d 75%);
 }
 
-/* Victim navigation: counter + next button (wheel / swipe / arrow keys also work) */
+/* Victim navigation: back, counter, next (wheel / swipe / arrow keys also work).
+   Pinned to the viewport so it holds still while dossiers of different heights swap. */
 .kill-nav {
+  position: fixed;
+  z-index: 8;
+  left: clamp(20px, 6vw, 112px);
+  bottom: clamp(24px, 6vh, 64px);
   display: flex;
   align-items: center;
-  gap: 22px;
-  margin-top: clamp(26px, 4.4vh, 48px);
+  gap: 18px;
+  pointer-events: none;
   visibility: hidden;
   opacity: 0;
+}
+
+.kill-prev {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(232, 225, 214, 0.22);
+  border-radius: 50%;
+  background: rgba(12, 9, 9, 0.45);
+  color: var(--text-warm-ivory);
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  transition: border-color 0.3s, box-shadow 0.4s, background 0.4s, opacity 0.4s;
+}
+
+.kill-prev svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.kill-prev:hover:not(:disabled),
+.kill-prev:focus-visible {
+  border-color: rgba(255, 74, 82, 0.9);
+  background: rgba(80, 8, 12, 0.5);
+  box-shadow: 0 0 24px 1px rgba(214, 34, 43, 0.3), 0 16px 36px rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+
+.kill-prev:hover:not(:disabled) svg {
+  transform: translateX(-3px);
+}
+
+.kill-prev:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .kill-count {
@@ -653,16 +658,7 @@ html, body {
   opacity: 0.35;
 }
 
-.kill-scroll-hint {
-  font-size: 0.72rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(232, 225, 214, 0.35);
-}
-
-.kill-nav.is-last .kill-scroll-hint,
-.kill-nav.is-single .kill-next,
-.kill-nav.is-single .kill-scroll-hint {
+.kill-nav.is-single .kill-next {
   display: none;
 }
 
@@ -675,7 +671,7 @@ html, body {
 
   .kill-panel {
     top: auto;
-    bottom: clamp(20px, 5vh, 48px);
+    bottom: calc(clamp(16px, 3vh, 32px) + 80px);
     left: 16px;
     right: 16px;
     width: auto;
@@ -691,12 +687,9 @@ html, body {
   }
 
   .kill-nav {
-    margin-top: 20px;
+    left: 16px;
+    bottom: clamp(16px, 3vh, 32px);
     gap: 14px;
-  }
-
-  .kill-scroll-hint {
-    display: none;
   }
 
   .kill-headline {

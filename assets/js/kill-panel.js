@@ -54,6 +54,11 @@ const ARROW_ICON = `
   <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
 </svg>`;
 
+const BACK_ICON = `
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>
+</svg>`;
+
 const pad2 = (n) => String(n).padStart(2, '0');
 
 export class KillPanel {
@@ -64,20 +69,29 @@ export class KillPanel {
     this.tl = null;
     this.swapTween = null;
     this.onNext = null;
+    this.onPrev = null;
 
-    // Persistent shell: swappable dossier content + navigation (counter, next button)
-    this.root.innerHTML = `
-      <div class="kill-content"></div>
-      <nav class="kill-nav" aria-label="Navegação entre vítimas">
-        <span class="kill-count"><b>01</b><span>/</span><em>01</em></span>
-        <button type="button" class="kill-next">
-          <span class="kill-next-label">Próxima vítima</span>${ARROW_ICON}
-        </button>
-        <span class="kill-scroll-hint">ou role</span>
-      </nav>`;
+    // Swappable dossier content
+    this.root.innerHTML = '<div class="kill-content"></div>';
     this.content = this.root.querySelector('.kill-content');
-    this.nav = this.root.querySelector('.kill-nav');
-    this.nextBtn = this.root.querySelector('.kill-next');
+
+    // Navigation lives outside the panel, pinned to the viewport, so it never shifts
+    // when one victim's dossier is taller than another's
+    this.nav = document.createElement('nav');
+    this.nav.className = 'kill-nav';
+    this.nav.setAttribute('aria-label', 'Navegação entre vítimas');
+    this.nav.innerHTML = `
+      <button type="button" class="kill-prev" aria-label="Vítima anterior">${BACK_ICON}</button>
+      <span class="kill-count"><b>01</b><span>/</span><em>01</em></span>
+      <button type="button" class="kill-next">
+        <span class="kill-next-label">Próxima vítima</span>${ARROW_ICON}
+      </button>`;
+    this.root.after(this.nav);
+    this.prevBtn = this.nav.querySelector('.kill-prev');
+    this.nextBtn = this.nav.querySelector('.kill-next');
+    this.prevBtn.addEventListener('click', () => {
+      if (this.onPrev) this.onPrev();
+    });
     this.nextBtn.addEventListener('click', () => {
       if (this.onNext) this.onNext();
     });
@@ -99,7 +113,6 @@ export class KillPanel {
           ${PAPERCLIP}
         </figure>
         <div class="kill-id">
-          <p class="kill-label"><span>Vítima</span> <strong>${escapeHtml(kill.number)}</strong><i class="kill-rule"></i></p>
           <h3 class="kill-name">${escapeHtml(kill.name)}</h3>
           <p class="kill-method">${KNIFE_ICON}<span>${escapeHtml(kill.method)}</span></p>
         </div>
@@ -107,13 +120,14 @@ export class KillPanel {
       <h4 class="kill-headline">${formatHeadline(kill.headline)}</h4>
       <p class="kill-desc">${escapeHtml(kill.description)}</p>
       <div class="kill-episode">
-        ${TV_ICON}<span class="kill-episode-label">Episódio</span><i></i><span class="kill-episode-value">${escapeHtml(kill.episode)}</span>
+        ${TV_ICON}<span class="kill-episode-value">${escapeHtml(kill.episode)}</span>
       </div>`;
 
-    this.root.querySelector('.kill-count b').textContent = pad2(index + 1);
-    this.root.querySelector('.kill-count em').textContent = pad2(total);
+    this.nav.querySelector('.kill-count b').textContent = pad2(index + 1);
+    this.nav.querySelector('.kill-count em').textContent = pad2(total);
     const isLast = index >= total - 1;
     this.nextBtn.disabled = isLast;
+    this.prevBtn.disabled = false;
     this.nav.classList.toggle('is-last', isLast);
     this.nav.classList.toggle('is-single', total <= 1);
 
@@ -135,8 +149,6 @@ export class KillPanel {
         { y: 0, rotate: -3, opacity: 1, scale: 1, duration: 1.3 }, 0.1)
       .fromTo(q('.kill-clip'), { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8 }, 0.55)
       .fromTo(q('.kill-spatter'), { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: 'power4.out' }, 0.7)
-      .fromTo(q('.kill-label'), { x: -24, opacity: 0 }, { x: 0, opacity: 1, duration: 0.9 }, 0.35)
-      .fromTo(q('.kill-rule'), { scaleX: 0 }, { scaleX: 1, duration: 1.1, ease: 'power3.inOut' }, 0.5)
       .fromTo(nameChars,
         { yPercent: 110, opacity: 0 },
         { yPercent: 0, opacity: 1, duration: 1.0, stagger: 0.035 }, 0.5)
@@ -206,6 +218,7 @@ export class KillPanel {
     }
     if (this.swapTween) this.swapTween.kill();
     this.nextBtn.disabled = true;
+    this.prevBtn.disabled = true;
     this.swapTween = gsap.to(this.content, {
       y: dir > 0 ? -36 : 36,
       opacity: 0,
