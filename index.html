@@ -22,6 +22,9 @@
   <!-- Canvas 3D fixo em tela cheia (acompanha das lâminas livres na Seção 1 até a Caixa na Seção 4) -->
   <canvas id="webgpu-canvas"></canvas>
 
+  <!-- Atmosfera sombria: névoa, brilho vermelho nas bordas, vinheta e grão (acima do canvas, abaixo do texto) -->
+  <div class="dark-backdrop" aria-hidden="true"></div>
+
   <!-- WebGPU Fallback Notice -->
   <div id="webgpu-error" class="error-overlay hidden">
     <div class="error-box">
@@ -37,7 +40,7 @@
       <section class="story-section section-1" data-section="1">
         <div class="section-inner">
           <h1 class="story-headline" data-split-words>
-            Esta é a noite.
+            Esta é a <span class="accent">noite.</span>
           </h1>
         </div>
         <div class="scroll-indicator" aria-hidden="true">
@@ -50,7 +53,7 @@
       <section class="story-section section-2" data-section="2">
         <div class="section-inner">
           <h2 class="story-headline" data-split-words>
-            E vai acontecer de novo e de novo.
+            E vai acontecer de novo e de <span class="accent">novo.</span>
           </h2>
         </div>
       </section>
@@ -59,7 +62,7 @@
       <section class="story-section section-3" data-section="3">
         <div class="section-inner">
           <h2 class="story-headline" data-split-words>
-            Tem que acontecer.
+            Tem que <span class="accent">acontecer.</span>
           </h2>
         </div>
       </section>
@@ -73,7 +76,7 @@
         <div class="outro-pin">
           <h2 class="outro-headline" data-split-outro>
             Alguns segredos não<br />
-            podem ser enterrados.<br />
+            podem ser <span class="accent">enterrados.</span><br />
             <span class="outro-sub">Eles precisam ser guardados.</span>
           </h2>
           <a href="#" class="outro-cta">Explorar agora</a>
