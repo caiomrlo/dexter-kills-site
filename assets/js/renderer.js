@@ -769,11 +769,18 @@ export class TrophyBoxRenderer {
 
     // 3. Update & Sort all 24 Glass Slides back-to-front relative to Camera
     const slideOrder = [];
-    const focusIdx = sceneState.focusSlide ?? -1;
-    const focusAmt = sceneState.focusAmount || 0;
+    // Kill reveal: each slide carries its own focusProgress (two can cross during a swap);
+    // the reveal lights follow whichever slide is most in focus
+    let fs = null;
+    let focusAmt = 0;
+    for (const sl of sceneState.slides) {
+      if ((sl.focusProgress || 0) > focusAmt) {
+        focusAmt = sl.focusProgress;
+        fs = sl;
+      }
+    }
 
     if (this.focusRimLight) {
-      const fs = focusIdx >= 0 ? sceneState.slides[focusIdx] : null;
       if (fs && focusAmt > 0.001) {
         const [fx, fy, fz] = fs.worldPos;
         // Rim sits behind the slide (away from camera) and down-left; key comes from upper-right
@@ -802,7 +809,7 @@ export class TrophyBoxRenderer {
       // Differentiate optical presence between free-floating slides against pitch-black background (Sections 1-3)
       // and the 24 tightly stacked slides inside the cream-lined Trophy Box (Section 4)
       const isHighFloating = s.worldPos[1] > 1.4 ? Math.min(1.0, (s.worldPos[1] - 1.4) / 2.0) : 0.0;
-      const isFocus = i === focusIdx ? focusAmt : 0.0;
+      const isFocus = s.focusProgress || 0.0;
       const activeAmt = Math.max(s.hoverProgress, s.selectProgress) * (1.0 - isFocus);
 
       const gu = slideObj.faceMat.userData.glassUniforms;
@@ -855,17 +862,16 @@ export class TrophyBoxRenderer {
     }
 
     // 4. Depth of field: focused slide on its own sharp layer, everything else blurred
-    const focusObj = focusIdx >= 0 ? this.slideObjects[focusIdx] : null;
-    const detach = !!(focusObj && sceneState.focusDetached);
-    if (focusObj && focusObj.onFocusLayer !== detach) {
-      focusObj.group.traverse((o) => o.layers.set(detach ? FOCUS_LAYER : 0));
-      focusObj.onFocusLayer = detach;
+    let detach = false;
+    for (let i = 0; i < BOX_SPECS.numSlides; i++) {
+      const slideObj = this.slideObjects[i];
+      const want = !!sceneState.slides[i].focusDetached;
+      if (slideObj.onFocusLayer !== want) {
+        slideObj.group.traverse((o) => o.layers.set(want ? FOCUS_LAYER : 0));
+        slideObj.onFocusLayer = want;
+      }
+      detach = detach || want;
     }
-    if (this._lastFocusObj && this._lastFocusObj !== focusObj && this._lastFocusObj.onFocusLayer) {
-      this._lastFocusObj.group.traverse((o) => o.layers.set(0));
-      this._lastFocusObj.onFocusLayer = false;
-    }
-    this._lastFocusObj = focusObj;
 
     if (this.blurPasses) {
       const blur = Math.max(0, Math.min(1, sceneState.backgroundBlur || 0));

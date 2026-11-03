@@ -550,6 +550,122 @@ html, body {
   color: rgba(232, 225, 214, 0.9);
 }
 
+/* Empty polaroid (no photo yet) */
+.kill-photo-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 3.4em;
+  color: rgba(232, 225, 214, 0.18);
+  background: radial-gradient(ellipse at 50% 40%, #2a2420, #120f0d 75%);
+}
+
+/* Victim navigation: counter + next button (wheel / swipe / arrow keys also work) */
+.kill-nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: clamp(26px, 4.4vh, 48px);
+  visibility: hidden;
+  opacity: 0;
+}
+
+.kill-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  color: rgba(232, 225, 214, 0.45);
+}
+
+.kill-count b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.9rem;
+  letter-spacing: 0.02em;
+  color: var(--text-warm-ivory);
+}
+
+.kill-count em {
+  font-style: normal;
+}
+
+.kill-next {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px 14px 26px;
+  border: 1px solid rgba(214, 34, 43, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(139, 13, 20, 0.35), rgba(60, 6, 10, 0.35));
+  color: var(--text-warm-ivory);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  overflow: hidden;
+  box-shadow: 0 0 0 0 rgba(214, 34, 43, 0.0), 0 16px 36px rgba(0, 0, 0, 0.55);
+  transition: border-color 0.3s, box-shadow 0.4s, background 0.4s, opacity 0.4s;
+}
+
+.kill-next svg {
+  width: 18px;
+  height: 18px;
+  color: #ff4a52;
+  transition: transform 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.kill-next::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  translate: -100% 0;
+  transition: translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.kill-next:hover:not(:disabled),
+.kill-next:focus-visible {
+  border-color: rgba(255, 74, 82, 0.9);
+  background: linear-gradient(180deg, rgba(170, 16, 25, 0.55), rgba(80, 8, 12, 0.5));
+  box-shadow: 0 0 28px 2px rgba(214, 34, 43, 0.35), 0 16px 36px rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+
+.kill-next:hover:not(:disabled)::before {
+  translate: 100% 0;
+}
+
+.kill-next:hover:not(:disabled) svg {
+  transform: translateX(4px);
+}
+
+.kill-next:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.kill-scroll-hint {
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(232, 225, 214, 0.35);
+}
+
+.kill-nav.is-last .kill-scroll-hint,
+.kill-nav.is-single .kill-next,
+.kill-nav.is-single .kill-scroll-hint {
+  display: none;
+}
+
 /* Portrait / phones: slide floats in the top half, dossier fills the bottom */
 @media (max-aspect-ratio: 1/1) {
   .kill-scrim {
@@ -572,6 +688,15 @@ html, body {
 
   .kill-name {
     font-size: clamp(2.2rem, 10vw, 3.6rem);
+  }
+
+  .kill-nav {
+    margin-top: 20px;
+    gap: 14px;
+  }
+
+  .kill-scroll-hint {
+    display: none;
   }
 
   .kill-headline {

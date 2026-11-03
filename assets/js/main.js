@@ -148,8 +148,13 @@ class DexterBoxApp {
     this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
     this.claspHintEl = document.querySelector('.clasp-hint');
 
-    // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows
+    // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows.
+    // The user then steps through KILLS with the button, wheel, touch swipe or arrow keys.
     this.killIndex = 0;
+    this.navLocked = false;      // page scroll paused while the dossier owns the wheel
+    this.wheelConsumed = false;  // one step per wheel gesture (trackpad inertia is ignored)
+    this.lastWheelTime = 0;
+    this.touchStartY = null;
     this.revealProgress = 0.0; // linear 0..1
     this.revealEase = 0.0;
     this.revealBlur = 0.0; // depth-of-field strength on the background box
@@ -197,7 +202,9 @@ class DexterBoxApp {
         floatCfg,
         hoverProgress: 0.0,
         selectProgress: 0.0,
-        focusProgress: 0.0,
+        focusLinear: 0.0,   // kill reveal: 0 = in its slot, 1 = held up in front of the camera
+        focusProgress: 0.0, // eased focusLinear (read by the renderer)
+        focusDetached: false,
         worldPos: [0, 0.34, slotZ],
         modelMatrix: Mat4.create(),
         invModelMatrix: Mat4.create()
@@ -229,15 +236,54 @@ class DexterBoxApp {
     return KILLS[this.killIndex]?.slotIndex ?? -1;
   }
 
+  get anySlideOut() {
+    return this.slides.some((s) => s.focusLinear > 0.001);
+  }
+
   // Interaction with the box is paused while a kill dossier is open
   get isRevealing() {
-    return this.outroUnlocked || this.revealProgress > 0.001;
+    return this.outroUnlocked || this.revealProgress > 0.001 || this.anySlideOut;
+  }
+
+  // True when the current slide is in place and no other slide is travelling
+  get isRevealSettled() {
+    const active = this.focusSlotIndex;
+    return (
+      this.outroUnlocked &&
+      this.revealProgress >= 1.0 &&
+      this.slides.every((s) => (s.index === active ? s.focusLinear > 0.85 : s.focusLinear < 0.05))
+    );
+  }
+
+  /**
+   * Step through the dossiers: +1 next victim, -1 previous.
+   * Going back from the first victim puts the slide away and closes the box again.
+   */
+  stepKill(dir) {
+    if (!this.isRevealSettled) return false;
+    const next = this.killIndex + dir;
+    if (next >= KILLS.length) return false;
+    if (next < 0) {
+      this.outroUnlocked = false;
+      if (this.killPanel) this.killPanel.hide();
+      return true;
+    }
+    this.killIndex = next;
+    if (this.killPanel) this.killPanel.switchTo(KILLS[next], next, KILLS.length, dir);
+    return true;
+  }
+
+  _setNavLock(locked) {
+    if (this.navLocked === locked) return;
+    this.navLocked = locked;
+    if (this.smoother) this.smoother.paused(locked);
   }
 
   async start() {
     this._initScrollAndTypography();
     if (this.killPanel && KILLS[this.killIndex]) {
-      this.killPanel.setKill(KILLS[this.killIndex]);
+      this.killPanel.setKill(KILLS[this.killIndex], this.killIndex, KILLS.length);
+      this.killPanel.onNext = () => this.stepKill(1);
     }
 
     try {
@@ -484,6 +530,48 @@ class DexterBoxApp {
       { passive: false }
     );
 
+    // Dossier navigation: wheel / swipe / keys step between victims instead of scrolling the page
+    window.addEventListener(
+      'wheel',
+      (e) => {
+        if (!this.navLocked) return;
+        e.preventDefault();
+        const now = performance.now();
+        if (now - this.lastWheelTime > 260) this.wheelConsumed = false;
+        this.lastWheelTime = now;
+        if (this.wheelConsumed || Math.abs(e.deltaY) < 6) return;
+        this.wheelConsumed = true;
+        this.stepKill(e.deltaY > 0 ? 1 : -1);
+      },
+      { passive: false }
+    );
+
+    window.addEventListener('touchstart', (e) => {
+      if (this.navLocked) this.touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (this.navLocked) e.preventDefault();
+    }, { passive: false });
+    window.addEventListener('touchend', (e) => {
+      if (!this.navLocked || this.touchStartY === null) return;
+      const dy = this.touchStartY - e.changedTouches[0].clientY;
+      this.touchStartY = null;
+      if (Math.abs(dy) > 40) this.stepKill(dy > 0 ? 1 : -1);
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (!this.navLocked) return;
+      const down = ['ArrowDown', 'PageDown', ' ', 'ArrowRight'];
+      const up = ['ArrowUp', 'PageUp', 'ArrowLeft'];
+      if (down.includes(e.key)) {
+        e.preventDefault();
+        this.stepKill(1);
+      } else if (up.includes(e.key)) {
+        e.preventDefault();
+        this.stepKill(-1);
+      }
+    });
+
     if (window.ResizeObserver) {
       this.resizeObserver = new ResizeObserver(() => {
         if (this.renderer.device) {
@@ -619,6 +707,10 @@ class DexterBoxApp {
     if (this.isOpen && this.outroProgress > 0.55 && !this.outroUnlocked) {
       if (hit.hitLidOrLatch) {
         this.outroUnlocked = true;
+        this.killIndex = 0;
+        if (this.killPanel) this.killPanel.setKill(KILLS[0], 0, KILLS.length);
+        this._setNavLock(true);
+        this.wheelConsumed = true; // a click is not a wheel gesture; wait for a fresh one
         this.selectedSlide = -1;
         this.hoveredSlide = -1;
         this.canvas.classList.remove('pointer-interactive');
@@ -698,11 +790,20 @@ class DexterBoxApp {
     // Camera eases back a bit later than the slide lifts, so the lift reads first
     const camRevealRaw = Math.min(1.0, Math.max(0.0, (rp - 0.15) / 0.85));
     const camReveal = camRevealRaw * camRevealRaw * (3.0 - 2.0 * camRevealRaw);
-    this.revealBlur = this.revealProgress > 0.3 ? camReveal : 0.0;
+    // Blur arms once a slide is clear of the box and stays on through victim swaps
+    const anyDetached = this.slides.some((s) => s.focusDetached);
+    if (anyDetached) this.blurArmed = true;
+    else if (!this.outroUnlocked) this.blurArmed = false;
+    this.revealBlur = this.blurArmed ? camReveal : 0.0;
 
     if (this.killPanel) {
       if (rp > 0.55 && revealTarget > 0.5) this.killPanel.show();
       else if (revealTarget < 0.5) this.killPanel.hide();
+    }
+
+    // Back at the clasp state (slide home, box shut): give the page scroll back
+    if (this.navLocked && !this.outroUnlocked && !this.anySlideOut && this.openTimeline < 0.02) {
+      this._setNavLock(false);
     }
 
     const effectiveTargetYaw = this.camera.targetYaw + yawOffset + REVEAL_CAM.yaw * camReveal;
@@ -756,18 +857,22 @@ class DexterBoxApp {
     const tanHalfFov = Math.tan(fovy * 0.5);
 
     // 2. Box Open/Close Two-Stage Animation Timeline
-    const targetTimeline = this.isOpen ? 1.0 : 0.0;
+    let targetTimeline = this.isOpen ? 1.0 : 0.0;
+
+    // Scroll-driven closing: box shuts during the first part of the outro.
+    // It waits for any slide still flying home, and eases shut (instead of following
+    // the scroll) when the user leaves the dossier.
+    if (this.isOpen && !this.outroUnlocked && this.outroProgress > 0.001 && !this.anySlideOut) {
+      const cap = 1.0 - Math.min(1.0, this.outroProgress / 0.55);
+      targetTimeline = Math.min(targetTimeline, cap);
+      if (!this.navLocked) this.openTimeline = Math.min(this.openTimeline, cap);
+    }
+
     const timelineSpeed = 1.35;
     if (this.openTimeline < targetTimeline) {
       this.openTimeline = Math.min(1.0, this.openTimeline + dt * timelineSpeed);
     } else if (this.openTimeline > targetTimeline) {
       this.openTimeline = Math.max(0.0, this.openTimeline - dt * timelineSpeed);
-    }
-
-    // Scroll-driven closing: box shuts during the first part of the outro
-    if (this.isOpen && !this.outroUnlocked && this.outroProgress > 0.001) {
-      const closeT = Math.min(1.0, this.outroProgress / 0.55);
-      this.openTimeline = Math.min(this.openTimeline, 1.0 - closeT);
     }
 
     // Stage 1 (0.0 -> 0.22): Clasp loop unhooks
@@ -912,19 +1017,41 @@ class DexterBoxApp {
       Mat4.invert(s.invModelMatrix, s.modelMatrix);
     }
 
-    this._applyFocusSlide(timeSec, aspect, tanHalfFov, camForward, camRight, camUp);
+    this._updateFocusSlides(dt, timeSec, aspect, tanHalfFov, camForward, camRight, camUp);
+  }
+
+  /**
+   * Advance every slide's focus progress. Only the active victim's slide is pulled out;
+   * on a swap the previous one heads home first and the next one leaves once it is clear.
+   */
+  _updateFocusSlides(dt, timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
+    const active = this.outroUnlocked && this.revealProgress > 0.0 ? this.focusSlotIndex : -1;
+    const othersOut = this.slides.some((s) => s.index !== active && s.focusLinear > 0.55);
+    const firstReveal = this.revealProgress < 1.0;
+
+    for (const s of this.slides) {
+      const target = s.index === active && !othersOut ? 1.0 : 0.0;
+      if (s.focusLinear < target) {
+        const speed = firstReveal ? 1.0 / 2.4 : 1.0 / 1.9;
+        s.focusLinear = Math.min(target, s.focusLinear + dt * speed);
+      } else if (s.focusLinear > target) {
+        const speed = this.outroUnlocked ? 1.0 / 1.6 : 1.0 / 1.9;
+        s.focusLinear = Math.max(target, s.focusLinear - dt * speed);
+      }
+      const p = s.focusLinear;
+      s.focusProgress = p * p * (3.0 - 2.0 * p);
+      // Clear of the box walls once lifted, so it can be drawn on the sharp layer
+      s.focusDetached = p > 0.3;
+      if (p > 0.0001) this._applyFocusSlide(s, timeSec, aspect, tanHalfFov, camForward, camRight, camUp);
+    }
   }
 
   /**
    * Kill reveal: the focused slide rises straight out of its slot, then glides to a
    * camera-relative hero pose (large, diagonal) and keeps a slow idle float.
    */
-  _applyFocusSlide(timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
-    const s = this.slides[this.focusSlotIndex];
-    if (!s) return;
-    const rp = this.revealProgress;
-    s.focusProgress = this.revealEase;
-    if (rp <= 0.0001) return;
+  _applyFocusSlide(s, timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
+    const rp = s.focusLinear;
 
     const smooth = (t) => t * t * (3.0 - 2.0 * t);
     const liftT = smooth(Math.min(1.0, rp / 0.3));
@@ -1010,10 +1137,6 @@ class DexterBoxApp {
       claspMatrix: this.claspMatrix,
       slides: this.slides,
       boxVisible,
-      focusSlide: this.focusSlotIndex,
-      focusAmount: this.revealEase,
-      // Slide is clear of the box walls once lifted, so it can move to the sharp layer
-      focusDetached: this.revealProgress > 0.3,
       backgroundBlur: this.revealBlur
     });
 
