@@ -133,6 +133,8 @@ class DexterBoxApp {
     // Outro (Section 5) progress: 0 = box open & centered, 1 = closed & on the right
     this.outroProgress = 0.0;
     this.smoothOutro = 0.0;
+    this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
+    this.claspHintEl = document.querySelector('.clasp-hint');
 
     // Box State (Starts OPEN as requested)
     this.isOpen = true;
@@ -362,11 +364,9 @@ class DexterBoxApp {
         });
       }
 
-      // Section 5 (outro): box closes & moves right, headline reveals on the left
+      // Section 5 (outro): box closes while staying centered; user reopens it via the gold clasp
       const outroSection = document.getElementById('outro-section');
-      const outroPin = outroSection?.querySelector('.outro-pin');
-      const outroHeadline = outroSection?.querySelector('[data-split-outro]');
-      if (outroSection && outroPin && outroHeadline) {
+      if (outroSection) {
         ScrollTrigger.create({
           trigger: outroSection,
           start: 'top bottom',
@@ -374,44 +374,10 @@ class DexterBoxApp {
           scrub: true,
           onUpdate: (self) => {
             this.outroProgress = self.progress;
+            // Scrolling back up re-arms the scroll-driven closing
+            if (self.progress < 0.3) this.outroUnlocked = false;
           }
         });
-
-        ScrollTrigger.create({
-          trigger: outroSection,
-          start: 'top top',
-          end: 'bottom bottom',
-          pin: outroPin,
-          pinSpacing: false,
-          anticipatePin: 1
-        });
-
-        const split = SplitText.create(outroHeadline, { type: 'lines,words', linesClass: 'outro-line' });
-        gsap.set(outroHeadline, { visibility: 'visible' });
-        gsap.set(split.words, { opacity: 0, x: -60, force3D: true });
-        gsap.to(split.words, {
-          opacity: 1,
-          x: 0,
-          force3D: true,
-          ease: 'power3.out',
-          stagger: 0.12,
-          scrollTrigger: {
-            trigger: outroSection,
-            start: 'top 55%',
-            end: 'top 5%',
-            scrub: 0.4
-          }
-        });
-
-        const cta = outroSection.querySelector('.outro-cta');
-        if (cta) {
-          gsap.fromTo(cta, { opacity: 0, y: 20 }, {
-            opacity: 1,
-            y: 0,
-            ease: 'power2.out',
-            scrollTrigger: { trigger: outroSection, start: 'top 20%', end: 'top 5%', scrub: 0.4 }
-          });
-        }
       }
 
       ScrollTrigger.refresh();
@@ -610,6 +576,12 @@ class DexterBoxApp {
   _handleClick(clientX, clientY) {
     const hit = this._raycastScene(clientX, clientY);
 
+    // Box shut by the outro scroll: clicking the lid/clasp reopens it
+    if (this.isOpen && this.outroProgress > 0.55 && !this.outroUnlocked) {
+      if (hit.hitLidOrLatch) this.outroUnlocked = true;
+      return;
+    }
+
     if (!this.isOpen) {
       if (hit.hitLidOrLatch) {
         this.toggleBox();
@@ -662,9 +634,9 @@ class DexterBoxApp {
     const so = this.smoothOutro;
     const outroEase = so * so * (3.0 - 2.0 * so);
     // Camera blends towards the closed framing only while the box is still scroll-driven
-    const camMix = this.isOpen ? outroEase : 0.0;
+    const camMix = this.isOpen && !this.outroUnlocked ? outroEase : 0.0;
 
-    const effectiveTargetYaw = this.camera.targetYaw + yawOffset + 0.62 * camMix;
+    const effectiveTargetYaw = this.camera.targetYaw + yawOffset;
     const effectiveTargetPitch = Math.max(
       0.08,
       Math.min(1.48, this.camera.targetPitch + pitchOffset + (CLOSED_VIEW.pitch - OPEN_VIEW.pitch) * camMix)
@@ -695,9 +667,6 @@ class DexterBoxApp {
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
     const fovy = (38 * Math.PI) / 180;
     Mat4.perspectiveZO(this.projMatrix, fovy, aspect, 0.1, 45.0);
-    // Shift the whole scene to the right in screen space (clip.x += offset * clip.w)
-    this.projMatrix[8] = -0.5 * outroEase;
-    this.screenShiftX = 0.5 * outroEase;
     Mat4.lookAt(this.viewMatrix, this.camera.pos, this.camera.target, [0, 1, 0]);
     Mat4.multiply(this.viewProjMatrix, this.projMatrix, this.viewMatrix);
     Mat4.invert(this.invViewProjMatrix, this.viewProjMatrix);
@@ -721,7 +690,7 @@ class DexterBoxApp {
     }
 
     // Scroll-driven closing: box shuts during the first part of the outro
-    if (this.isOpen && this.outroProgress > 0.001) {
+    if (this.isOpen && !this.outroUnlocked && this.outroProgress > 0.001) {
       const closeT = Math.min(1.0, this.outroProgress / 0.55);
       this.openTimeline = Math.min(this.openTimeline, 1.0 - closeT);
     }
@@ -869,6 +838,25 @@ class DexterBoxApp {
     }
   }
 
+  _updateHints() {
+    // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
+    if (this.claspHintEl) {
+      const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);
+      const visible = this.outroUnlocked ? 0 : shut;
+      if (visible > 0.01) {
+        const m = this.claspMatrix;
+        const x = m[12], y = m[13] - 0.05, z = m[14];
+        const v = this.viewProjMatrix;
+        const cw = v[3] * x + v[7] * y + v[11] * z + v[15];
+        const nx = (v[0] * x + v[4] * y + v[8] * z + v[12]) / cw;
+        const ny = (v[1] * x + v[5] * y + v[9] * z + v[13]) / cw;
+        this.claspHintEl.style.transform =
+          `translate(${((nx * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((0.5 - ny * 0.5) * innerHeight).toFixed(1)}px)`;
+      }
+      this.claspHintEl.style.opacity = String(visible);
+    }
+  }
+
   _loop(now) {
     const dt = Math.min(0.05, (now - this.lastFrameTime) * 0.001);
     this.lastFrameTime = now;
@@ -879,6 +867,8 @@ class DexterBoxApp {
     // Only draw the Trophy Box and stationary slides once approaching Section 4
     const boxVisible = this.smoothScrollProgress > 0.62;
 
+    this._updateHints();
+
     this.renderer.render({
       viewMatrix: this.viewMatrix,
       projMatrix: this.projMatrix,
@@ -886,7 +876,6 @@ class DexterBoxApp {
       cameraPos: this.camera.pos,
       lidOpenProgress: this.lidOpenProgress,
       time: timeSec,
-      screenShiftX: this.screenShiftX || 0,
       hoveredSlide: this.hoveredSlide,
       selectedSlide: this.selectedSlide,
       baseMatrix: this.baseMatrix,
