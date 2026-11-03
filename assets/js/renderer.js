@@ -13,6 +13,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { HorizontalBlurShader } from 'three/addons/shaders/HorizontalBlurShader.js';
+import { VerticalBlurShader } from 'three/addons/shaders/VerticalBlurShader.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 
 import {
@@ -31,6 +35,34 @@ import {
   createBloodSpecimenVariants,
   createGlassSlideSurfaceMaps
 } from './textures.js';
+
+// Objects on this layer skip the (blurred) main pass and are drawn sharp on top
+const FOCUS_LAYER = 1;
+
+/**
+ * Draws only the FOCUS_LAYER objects over the already-blurred frame (depth cleared,
+ * colour kept), so the slide in focus stays crisp while the box behind is out of focus.
+ */
+class FocusLayerPass extends Pass {
+  constructor(scene, camera) {
+    super();
+    this.scene = scene;
+    this.camera = camera;
+    this.needsSwap = false;
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    const oldAutoClear = renderer.autoClear;
+    const oldBackground = this.scene.background;
+    renderer.autoClear = false;
+    this.scene.background = null;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    renderer.clearDepth();
+    renderer.render(this.scene, this.camera);
+    this.scene.background = oldBackground;
+    renderer.autoClear = oldAutoClear;
+  }
+}
 
 export class TrophyBoxRenderer {
   constructor(canvas) {
@@ -248,6 +280,7 @@ export class TrophyBoxRenderer {
       uScratchMap: { value: this.glassSurfaceMaps.scratchMap },
       uPresence: { value: 1.0 }, // 1 = free-floating hero slide, 0 = stacked inside the box
       uActive: { value: 0.0 },   // hover / select highlight
+      uFocus: { value: 0.0 },    // kill reveal: slide held up close to the camera
       uBlood: {
         value: new THREE.Vector3(
           hasBlood ? 1.0 : 0.0,
@@ -277,7 +310,7 @@ export class TrophyBoxRenderer {
     });
     mat.userData.glassUniforms = uniforms;
 
-    mat.customProgramCacheKey = () => 'dexter-glass-face-v1';
+    mat.customProgramCacheKey = () => 'dexter-glass-face-v2';
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
 
@@ -293,6 +326,7 @@ export class TrophyBoxRenderer {
           uniform sampler2D uScratchMap;
           uniform float uPresence;
           uniform float uActive;
+          uniform float uFocus;
           uniform vec3 uBlood;
           uniform float uSeed;`
         )
@@ -313,7 +347,7 @@ export class TrophyBoxRenderer {
 
           // Soft-compress strong reflections so grazing angles stay glassy instead of milky,
           // and sun-like light hits don't blow out into big bloom blobs
-          vec3 gSpec = totalSpecular * 1.35;
+          vec3 gSpec = totalSpecular * 1.35 * (1.0 - 0.55 * uFocus);
           gSpec = gSpec / (1.0 + gSpec * 0.9);
           float gSpecLum = dot(gSpec, vec3(0.299, 0.587, 0.114));
 
@@ -331,19 +365,22 @@ export class TrophyBoxRenderer {
 
           // Rim tint: cool soda-lime green, warming to crimson at one end like a red back light
           float gRedSide = smoothstep(0.1, 0.68, gP.x * sign(sin(uSeed * 5.1) + 0.001));
-          vec3 gRimCol = mix(vec3(0.80, 0.96, 0.90), vec3(1.0, 0.28, 0.24), gRedSide * 0.45);
+          vec3 gRimCol = mix(vec3(0.80, 0.96, 0.90), vec3(1.0, 0.28, 0.24), gRedSide * (0.45 + 0.5 * uFocus));
+          gRimCol = mix(gRimCol, vec3(0.95, 0.96, 1.0), (1.0 - gRedSide) * uFocus * 0.6);
 
           vec3 gCol = gSpec * 0.85;
           gCol += gRimCol * gRim * (0.95 + gSpecLum * 2.5 + gFres) * (0.6 + 0.4 * uPresence);
           gCol += gRimCol * gRimGlow * 0.06;
-          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence); // faint glass body haze
+          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence) * (1.0 - 0.8 * uFocus); // faint glass body haze
           gCol += vec3(0.85, 0.92, 0.95) * gStreak * (0.06 + gSpecLum * 0.6) * (0.5 + 0.5 * uPresence);
-          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4);
-          gCol += vec3(0.55, 0.02, 0.03) * gBloodHalo * 0.07;
+          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4) * (1.0 - 0.45 * uFocus);
+          gCol += vec3(0.55, 0.02, 0.03) * gBloodHalo * (0.07 + 0.12 * uFocus);
+          gCol += vec3(1.0, 0.1, 0.12) * gRimGlow * gRedSide * 0.35 * uFocus; // red light bleeding in at one end
           gCol += vec3(1.0, 0.86, 0.52) * uActive * (0.05 + gRim * 0.9 + gRimGlow * 0.12);
 
           // Alpha = how much the glass dims what is behind it (mostly clear)
           float gA = 0.03 + 0.05 * uPresence + gFres * 0.30 + gRim * 0.40 + gSpecLum * 0.25 + gScratch * 0.04;
+          gCol *= 1.0 - 0.35 * uFocus * (1.0 - gRim);
           gl_FragColor = vec4(gCol, clamp(gA, 0.0, 0.92));
           `
         );
@@ -595,6 +632,16 @@ export class TrophyBoxRenderer {
     this.camLightRig.add(this.floatRimLight);
 
     this.scene.add(this.camLightRig);
+
+    // 7. Kill reveal lights: follow the slide in focus (blood-red rim from behind + cool key)
+    this.focusRimLight = new THREE.PointLight(0xff1a24, 0.0, 6.0, 1.6);
+    this.focusKeyLight = new THREE.PointLight(0xf4f1ff, 0.0, 6.0, 1.6);
+    this.scene.add(this.focusRimLight, this.focusKeyLight);
+
+    // Lights must also light the sharp focus layer
+    this.scene.traverse((o) => {
+      if (o.isLight) o.layers.enable(FOCUS_LAYER);
+    });
   }
 
   _setupPostProcessing() {
@@ -611,6 +658,24 @@ export class TrophyBoxRenderer {
 
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
+
+    // Depth of field for the kill reveal: blur the scene, then draw the focused slide sharp on top.
+    // Two separable gaussian passes at different spreads give a soft, ghost-free blur.
+    this.blurPasses = [
+      new ShaderPass(HorizontalBlurShader),
+      new ShaderPass(VerticalBlurShader),
+      new ShaderPass(HorizontalBlurShader),
+      new ShaderPass(VerticalBlurShader)
+    ];
+    this.blurPasses.forEach((p) => {
+      p.enabled = false;
+      this.composer.addPass(p);
+    });
+
+    this.focusCamera = new THREE.PerspectiveCamera();
+    this.focusPass = new FocusLayerPass(this.scene, this.focusCamera);
+    this.focusPass.enabled = false;
+    this.composer.addPass(this.focusPass);
 
     // Subtle HDR Specular Bloom
     this.bloomPass = new UnrealBloomPass(
@@ -704,6 +769,25 @@ export class TrophyBoxRenderer {
 
     // 3. Update & Sort all 24 Glass Slides back-to-front relative to Camera
     const slideOrder = [];
+    const focusIdx = sceneState.focusSlide ?? -1;
+    const focusAmt = sceneState.focusAmount || 0;
+
+    if (this.focusRimLight) {
+      const fs = focusIdx >= 0 ? sceneState.slides[focusIdx] : null;
+      if (fs && focusAmt > 0.001) {
+        const [fx, fy, fz] = fs.worldPos;
+        // Rim sits behind the slide (away from camera) and down-left; key comes from upper-right
+        const bx = fx - camX, by = fy - camY, bz = fz - camZ;
+        const len = Math.hypot(bx, by, bz) || 1;
+        this.focusRimLight.position.set(fx + (bx / len) * 0.9 - 0.7, fy + (by / len) * 0.9 - 0.4, fz + (bz / len) * 0.9);
+        this.focusKeyLight.position.set(fx + 0.9, fy + 1.1, fz - (bz / len) * -0.6);
+        this.focusRimLight.intensity = 3.5 * focusAmt;
+        this.focusKeyLight.intensity = 1.6 * focusAmt;
+      } else {
+        this.focusRimLight.intensity = 0;
+        this.focusKeyLight.intensity = 0;
+      }
+    }
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = sceneState.slides[i];
@@ -718,11 +802,14 @@ export class TrophyBoxRenderer {
       // Differentiate optical presence between free-floating slides against pitch-black background (Sections 1-3)
       // and the 24 tightly stacked slides inside the cream-lined Trophy Box (Section 4)
       const isHighFloating = s.worldPos[1] > 1.4 ? Math.min(1.0, (s.worldPos[1] - 1.4) / 2.0) : 0.0;
-      const activeAmt = Math.max(s.hoverProgress, s.selectProgress);
+      const isFocus = i === focusIdx ? focusAmt : 0.0;
+      const activeAmt = Math.max(s.hoverProgress, s.selectProgress) * (1.0 - isFocus);
 
       const gu = slideObj.faceMat.userData.glassUniforms;
       gu.uPresence.value = isHighFloating;
       gu.uActive.value = activeAmt;
+      gu.uFocus.value = isFocus;
+      slideObj.faceMat.envMapIntensity = 1.6 - 1.0 * isFocus;
 
       // Thickness edges: bright soda-lime green, warming to gold on hover/select
       slideObj.edgeMat.color.setRGB(
@@ -736,6 +823,13 @@ export class TrophyBoxRenderer {
         0.31 - activeAmt * 0.10
       );
       slideObj.edgeMat.opacity = 0.55 + isHighFloating * 0.25 + activeAmt * 0.20;
+      if (isFocus > 0.0) {
+        // Focused slide: edges glow blood red, like the bevel is catching a red lamp
+        const c = slideObj.edgeMat.color, e = slideObj.edgeMat.emissive;
+        c.setRGB(c.r + (1.0 - c.r) * isFocus, c.g + (0.42 - c.g) * isFocus, c.b + (0.42 - c.b) * isFocus);
+        e.setRGB(e.r + (0.85 - e.r) * isFocus, e.g + (0.06 - e.g) * isFocus, e.b + (0.08 - e.b) * isFocus);
+        slideObj.edgeMat.opacity = Math.min(1.0, slideObj.edgeMat.opacity + 0.15 * isFocus);
+      }
 
       const dx = s.worldPos[0] - camX;
       const dy = s.worldPos[1] - camY;
@@ -760,7 +854,41 @@ export class TrophyBoxRenderer {
       }
     }
 
-    // 4. Render with Integrated Post-Processing
+    // 4. Depth of field: focused slide on its own sharp layer, everything else blurred
+    const focusObj = focusIdx >= 0 ? this.slideObjects[focusIdx] : null;
+    const detach = !!(focusObj && sceneState.focusDetached);
+    if (focusObj && focusObj.onFocusLayer !== detach) {
+      focusObj.group.traverse((o) => o.layers.set(detach ? FOCUS_LAYER : 0));
+      focusObj.onFocusLayer = detach;
+    }
+    if (this._lastFocusObj && this._lastFocusObj !== focusObj && this._lastFocusObj.onFocusLayer) {
+      this._lastFocusObj.group.traverse((o) => o.layers.set(0));
+      this._lastFocusObj.onFocusLayer = false;
+    }
+    this._lastFocusObj = focusObj;
+
+    if (this.blurPasses) {
+      const blur = Math.max(0, Math.min(1, sceneState.backgroundBlur || 0));
+      const blurOn = blur > 0.01;
+      // Spread in pixels scales with the drawing-buffer height so it looks the same at any DPR
+      const px = blur * 2.6 * (this.canvas.height / 900);
+      const w = Math.max(1, this.canvas.width);
+      const h = Math.max(1, this.canvas.height);
+      const [h1, v1, h2, v2] = this.blurPasses;
+      h1.uniforms.h.value = px / w;
+      v1.uniforms.v.value = px / h;
+      h2.uniforms.h.value = (px * 2.0) / w;
+      v2.uniforms.v.value = (px * 2.0) / h;
+      this.blurPasses.forEach((p) => (p.enabled = blurOn));
+
+      this.focusPass.enabled = detach;
+      if (detach) {
+        this.focusCamera.copy(this.camera, false);
+        this.focusCamera.layers.set(FOCUS_LAYER);
+      }
+    }
+
+    // 5. Render with Integrated Post-Processing
     if (this.composer) {
       this.composer.render();
     } else {

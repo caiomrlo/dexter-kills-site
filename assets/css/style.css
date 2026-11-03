@@ -314,6 +314,272 @@ html, body {
   50% { transform: scale(1.35); }
 }
 
+/* ------------------------------------------------------------------
+   Kill dossier (after the clasp opens the box): slide in focus on the
+   right, victim info on the left. Content comes from assets/js/kills.js
+   ------------------------------------------------------------------ */
+
+/* Darkens the box behind the text and adds a faint blood haze on the left */
+.kill-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(ellipse 55% 70% at 0% 55%, rgba(120, 8, 14, 0.22), transparent 70%),
+    linear-gradient(90deg, rgba(3, 2, 2, 0.94) 0%, rgba(3, 2, 2, 0.86) 34%, rgba(3, 2, 2, 0.35) 58%, transparent 78%),
+    linear-gradient(0deg, rgba(3, 2, 2, 0.7) 0%, transparent 35%);
+}
+
+.kill-panel {
+  position: fixed;
+  z-index: 8;
+  top: 50%;
+  left: clamp(20px, 6vw, 112px);
+  width: min(700px, 50vw);
+  translate: 0 -50%;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  color: var(--text-warm-ivory);
+}
+
+.kill-top {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 2.6vw, 40px);
+}
+
+/* Polaroid: photo sits behind the shared frame, inset to the frame's transparent window */
+.kill-polaroid {
+  position: relative;
+  flex: 0 0 auto;
+  width: clamp(150px, 15vw, 240px);
+  aspect-ratio: 929 / 1064;
+  transform-origin: 50% 0%;
+  filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.75)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+}
+
+.kill-photo {
+  position: absolute;
+  left: 6.8%;
+  right: 6.3%;
+  top: 5%;
+  bottom: 18.4%;
+  overflow: hidden;
+  background: #1a1612;
+}
+
+.kill-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.9) sepia(0.28) contrast(1.15) brightness(0.86);
+}
+
+.kill-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kill-spatter {
+  position: absolute;
+  left: 2%;
+  bottom: 1%;
+  width: 62%;
+  transform-origin: 20% 80%;
+  mix-blend-mode: multiply;
+}
+
+.kill-clip {
+  position: absolute;
+  top: -10%;
+  left: 24%;
+  width: 13%;
+  rotate: 8deg;
+  filter: drop-shadow(1px 3px 2px rgba(0, 0, 0, 0.6));
+}
+
+.kill-id {
+  min-width: 0;
+}
+
+.kill-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-family: var(--font-sans);
+  font-size: clamp(0.72rem, 0.9vw, 0.9rem);
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(232, 225, 214, 0.78);
+}
+
+.kill-label strong {
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--text-warm-ivory);
+}
+
+.kill-rule {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: 1px;
+  margin-left: 0.4em;
+  background: linear-gradient(90deg, var(--accent-blood-bright), rgba(184, 20, 29, 0));
+  transform-origin: 0 50%;
+}
+
+.kill-name {
+  margin-top: 0.12em;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 4.4vw, 4.8rem);
+  line-height: 0.98;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+  color: #e9e3d9;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.8));
+}
+
+.kill-word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.kill-char-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.04em;
+}
+
+.kill-char {
+  display: inline-block;
+  background: linear-gradient(180deg, #f3eee6 0%, #cfc7bb 60%, #9d958b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.kill-method {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin-top: 0.7em;
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(1.15rem, 1.6vw, 1.6rem);
+  letter-spacing: 0.02em;
+  color: rgba(232, 225, 214, 0.9);
+}
+
+.kill-method svg {
+  width: 1.5em;
+  height: 1.5em;
+  color: var(--accent-blood-bright);
+  filter: drop-shadow(0 0 8px rgba(214, 34, 43, 0.45));
+}
+
+.kill-headline {
+  margin-top: clamp(28px, 4.2vh, 52px);
+  font-family: 'Barlow Condensed', var(--font-display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: clamp(2.2rem, 3.6vw, 3.6rem);
+  line-height: 1;
+  color: var(--text-warm-ivory);
+  text-shadow: 0 12px 32px rgba(0, 0, 0, 0.85);
+}
+
+.kill-headline .accent {
+  padding-right: 0.08em;
+}
+
+.kill-desc {
+  margin-top: 0.9em;
+  max-width: 34em;
+  font-size: clamp(0.95rem, 1.15vw, 1.15rem);
+  line-height: 1.6;
+  color: rgba(232, 225, 214, 0.78);
+}
+
+.kill-episode {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: clamp(24px, 3.6vh, 40px);
+  padding: 14px 26px 14px 20px;
+  border: 1px solid rgba(232, 225, 214, 0.14);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(30, 22, 22, 0.55), rgba(12, 9, 9, 0.55));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 18px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+}
+
+.kill-episode svg {
+  width: 26px;
+  height: 26px;
+  color: var(--accent-blood-bright);
+}
+
+.kill-episode-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+.kill-episode i {
+  width: 1px;
+  height: 26px;
+  background: rgba(232, 225, 214, 0.18);
+}
+
+.kill-episode-value {
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-style: italic;
+  font-size: 1.2rem;
+  letter-spacing: 0.02em;
+  color: rgba(232, 225, 214, 0.9);
+}
+
+/* Portrait / phones: slide floats in the top half, dossier fills the bottom */
+@media (max-aspect-ratio: 1/1) {
+  .kill-scrim {
+    background:
+      linear-gradient(0deg, rgba(3, 2, 2, 0.95) 0%, rgba(3, 2, 2, 0.88) 50%, rgba(3, 2, 2, 0.2) 72%, transparent 85%);
+  }
+
+  .kill-panel {
+    top: auto;
+    bottom: clamp(20px, 5vh, 48px);
+    left: 16px;
+    right: 16px;
+    width: auto;
+    translate: none;
+  }
+
+  .kill-polaroid {
+    width: clamp(110px, 30vw, 170px);
+  }
+
+  .kill-name {
+    font-size: clamp(2.2rem, 10vw, 3.6rem);
+  }
+
+  .kill-headline {
+    margin-top: 20px;
+    font-size: clamp(1.8rem, 8vw, 2.6rem);
+  }
+}
+
 /* Error overlay */
 .error-overlay {
   position: fixed;

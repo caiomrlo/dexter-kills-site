@@ -8,11 +8,23 @@
 import { TrophyBoxRenderer } from './renderer.js';
 import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
+import { KILLS } from './kills.js';
+import { KillPanel } from './kill-panel.js';
 
 // Camera framing when the box is OPEN (closer framing filling more vertical viewport)
 const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 9.1, center: [0.0, 1.58, -0.20] };
 // Camera framing when the box is CLOSED
 const CLOSED_VIEW = { yaw: 0.0, pitch: 0.27, distance: 8.6, center: [0.0, 0.22, 0.0] };
+
+// Kill reveal: where the focused slide floats in camera space (landscape / portrait screens)
+const FOCUS_POSE = {
+  // Close-up: the slide is allowed to run off the top-right edge of the screen
+  wide: { ndcX: 0.56, ndcY: 0.04, depth: 1.75, roll: 0.58, tiltX: -0.34, tiltY: -0.42 },
+  tall: { ndcX: 0.18, ndcY: 0.55, depth: 1.9, roll: 0.55, tiltX: -0.3, tiltY: -0.3 }
+};
+// Camera pulls back and up so the open box sinks into the dark behind the dossier
+// centerX < 0 shifts the box to the right of the screen, away from the dossier text
+const REVEAL_CAM = { distance: 2.4, centerX: -2.1, centerY: 0.9, yaw: -0.3, pitch: 0.1 };
 
 /**
  * 7 Blood Slides (all with blood specimens, indices < 13) that start arranged around
@@ -136,6 +148,14 @@ class DexterBoxApp {
     this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
     this.claspHintEl = document.querySelector('.clasp-hint');
 
+    // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows
+    this.killIndex = 0;
+    this.revealProgress = 0.0; // linear 0..1
+    this.revealEase = 0.0;
+    this.revealBlur = 0.0; // depth-of-field strength on the background box
+    const panelEl = document.getElementById('kill-panel');
+    this.killPanel = panelEl ? new KillPanel(panelEl) : null;
+
     // Box State (Starts OPEN as requested)
     this.isOpen = true;
     this.openTimeline = 1.0; // 0.0 = fully closed & locked, 1.0 = fully open
@@ -177,6 +197,7 @@ class DexterBoxApp {
         floatCfg,
         hoverProgress: 0.0,
         selectProgress: 0.0,
+        focusProgress: 0.0,
         worldPos: [0, 0.34, slotZ],
         modelMatrix: Mat4.create(),
         invModelMatrix: Mat4.create()
@@ -204,8 +225,20 @@ class DexterBoxApp {
     this.lastFrameTime = performance.now();
   }
 
+  get focusSlotIndex() {
+    return KILLS[this.killIndex]?.slotIndex ?? -1;
+  }
+
+  // Interaction with the box is paused while a kill dossier is open
+  get isRevealing() {
+    return this.outroUnlocked || this.revealProgress > 0.001;
+  }
+
   async start() {
     this._initScrollAndTypography();
+    if (this.killPanel && KILLS[this.killIndex]) {
+      this.killPanel.setKill(KILLS[this.killIndex]);
+    }
 
     try {
       await this.renderer.init();
@@ -394,6 +427,7 @@ class DexterBoxApp {
     // Pointer controls on canvas (active in Section 4)
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || this.pageScrollProgress <= 0.84) return;
+      if (this.isRevealing) return;
       this.isDragging = true;
       this.dragDistance = 0;
       this.pointerDownPos = [e.clientX, e.clientY];
@@ -403,6 +437,11 @@ class DexterBoxApp {
 
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.pageScrollProgress <= 0.84) return;
+      if (this.isRevealing) {
+        this.hoveredSlide = -1;
+        this.canvas.classList.remove('pointer-interactive');
+        return;
+      }
       const dx = e.clientX - this.lastPointerPos[0];
       const dy = e.clientY - this.lastPointerPos[1];
       this.lastPointerPos = [e.clientX, e.clientY];
@@ -578,7 +617,17 @@ class DexterBoxApp {
 
     // Box shut by the outro scroll: clicking the lid/clasp reopens it
     if (this.isOpen && this.outroProgress > 0.55 && !this.outroUnlocked) {
-      if (hit.hitLidOrLatch) this.outroUnlocked = true;
+      if (hit.hitLidOrLatch) {
+        this.outroUnlocked = true;
+        this.selectedSlide = -1;
+        this.hoveredSlide = -1;
+        this.canvas.classList.remove('pointer-interactive');
+        // Frame the open box straight on before the slide leaves it
+        this.camera.targetYaw = OPEN_VIEW.yaw;
+        this.camera.targetPitch = OPEN_VIEW.pitch;
+        this.camera.targetDistance = OPEN_VIEW.distance;
+        this.camera.targetCenter = [...OPEN_VIEW.center];
+      }
       return;
     }
 
@@ -636,14 +685,39 @@ class DexterBoxApp {
     // Camera blends towards the closed framing only while the box is still scroll-driven
     const camMix = this.isOpen && !this.outroUnlocked ? outroEase : 0.0;
 
-    const effectiveTargetYaw = this.camera.targetYaw + yawOffset;
+    // Kill reveal starts once the box is (almost) fully open again after the clasp click
+    const revealTarget = this.outroUnlocked && this.isOpen && this.openTimeline > 0.82 ? 1.0 : 0.0;
+    const revealSpeed = revealTarget > this.revealProgress ? 1.0 / 2.4 : 1.0 / 1.1;
+    if (this.revealProgress < revealTarget) {
+      this.revealProgress = Math.min(revealTarget, this.revealProgress + dt * revealSpeed);
+    } else if (this.revealProgress > revealTarget) {
+      this.revealProgress = Math.max(revealTarget, this.revealProgress - dt * revealSpeed);
+    }
+    const rp = this.revealProgress;
+    this.revealEase = rp * rp * (3.0 - 2.0 * rp);
+    // Camera eases back a bit later than the slide lifts, so the lift reads first
+    const camRevealRaw = Math.min(1.0, Math.max(0.0, (rp - 0.15) / 0.85));
+    const camReveal = camRevealRaw * camRevealRaw * (3.0 - 2.0 * camRevealRaw);
+    this.revealBlur = this.revealProgress > 0.3 ? camReveal : 0.0;
+
+    if (this.killPanel) {
+      if (rp > 0.55 && revealTarget > 0.5) this.killPanel.show();
+      else if (revealTarget < 0.5) this.killPanel.hide();
+    }
+
+    const effectiveTargetYaw = this.camera.targetYaw + yawOffset + REVEAL_CAM.yaw * camReveal;
     const effectiveTargetPitch = Math.max(
       0.08,
-      Math.min(1.48, this.camera.targetPitch + pitchOffset + (CLOSED_VIEW.pitch - OPEN_VIEW.pitch) * camMix)
+      Math.min(
+        1.48,
+        this.camera.targetPitch + pitchOffset + (CLOSED_VIEW.pitch - OPEN_VIEW.pitch) * camMix + REVEAL_CAM.pitch * camReveal
+      )
     );
-    const effectiveTargetDist = this.camera.targetDistance + (CLOSED_VIEW.distance - 1.7 - OPEN_VIEW.distance) * camMix;
+    const effectiveTargetDist =
+      this.camera.targetDistance + (CLOSED_VIEW.distance - 1.7 - OPEN_VIEW.distance) * camMix + REVEAL_CAM.distance * camReveal;
     const effectiveTargetCenterY =
-      this.camera.targetCenter[1] + scrollLiftY + (CLOSED_VIEW.center[1] - OPEN_VIEW.center[1]) * camMix;
+      this.camera.targetCenter[1] + scrollLiftY + (CLOSED_VIEW.center[1] - OPEN_VIEW.center[1]) * camMix +
+      REVEAL_CAM.centerY * camReveal;
 
     // 1. Smoothly damp camera orbit
     const camSmooth = 1.0 - Math.exp(-10.0 * dt);
@@ -651,7 +725,8 @@ class DexterBoxApp {
     this.camera.pitch += (effectiveTargetPitch - this.camera.pitch) * camSmooth;
     this.camera.distance += (effectiveTargetDist - this.camera.distance) * camSmooth;
 
-    this.camera.target[0] += (this.camera.targetCenter[0] - this.camera.target[0]) * camSmooth;
+    const effectiveTargetCenterX = this.camera.targetCenter[0] + REVEAL_CAM.centerX * camReveal;
+    this.camera.target[0] += (effectiveTargetCenterX - this.camera.target[0]) * camSmooth;
     this.camera.target[1] += (effectiveTargetCenterY - this.camera.target[1]) * camSmooth;
     this.camera.target[2] += (this.camera.targetCenter[2] - this.camera.target[2]) * camSmooth;
 
@@ -836,6 +911,58 @@ class DexterBoxApp {
 
       Mat4.invert(s.invModelMatrix, s.modelMatrix);
     }
+
+    this._applyFocusSlide(timeSec, aspect, tanHalfFov, camForward, camRight, camUp);
+  }
+
+  /**
+   * Kill reveal: the focused slide rises straight out of its slot, then glides to a
+   * camera-relative hero pose (large, diagonal) and keeps a slow idle float.
+   */
+  _applyFocusSlide(timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
+    const s = this.slides[this.focusSlotIndex];
+    if (!s) return;
+    const rp = this.revealProgress;
+    s.focusProgress = this.revealEase;
+    if (rp <= 0.0001) return;
+
+    const smooth = (t) => t * t * (3.0 - 2.0 * t);
+    const liftT = smooth(Math.min(1.0, rp / 0.3));
+    const flyRaw = Math.min(1.0, Math.max(0.0, (rp - 0.22) / 0.78));
+    // easeInOutCubic for a weighty, cinematic glide
+    const flyT = flyRaw < 0.5 ? 4.0 * flyRaw * flyRaw * flyRaw : 1.0 - Math.pow(-2.0 * flyRaw + 2.0, 3.0) / 2.0;
+
+    const pose = aspect >= 1.0 ? FOCUS_POSE.wide : FOCUS_POSE.tall;
+    const ndcX = pose.ndcX + Math.sin(timeSec * 0.55) * 0.012 * flyT;
+    const ndcY = pose.ndcY + Math.cos(timeSec * 0.7) * 0.02 * flyT;
+    // Narrow screens: push the slide back so its full length fits the width
+    const baseDepth = aspect >= 1.0 ? pose.depth : Math.min(5.0, Math.max(pose.depth, 1.5 / aspect));
+    const depth = baseDepth + Math.sin(timeSec * 0.4) * 0.05 * flyT;
+    const halfH = depth * tanHalfFov;
+    const rx = ndcX * halfH * aspect;
+    const uy = ndcY * halfH;
+    const cp = this.camera.pos;
+    const focusPos = [
+      cp[0] + camForward[0] * depth + camRight[0] * rx + camUp[0] * uy,
+      cp[1] + camForward[1] * depth + camRight[1] * rx + camUp[1] * uy,
+      cp[2] + camForward[2] * depth + camRight[2] * rx + camUp[2] * uy
+    ];
+
+    // Phase 1: lift out of the rack; Phase 2: fly to the focus pose (with a slight arc)
+    const fromY = 0.34 + 1.15 * liftT;
+    const arc = Math.sin(flyT * Math.PI) * 0.35;
+    s.worldPos[0] = focusPos[0] * flyT;
+    s.worldPos[1] = fromY + (focusPos[1] - fromY) * flyT + arc;
+    s.worldPos[2] = s.slotZ + (focusPos[2] - s.slotZ) * flyT;
+
+    Mat4.fromTranslation(s.modelMatrix, s.worldPos);
+    // Face the camera, then lay the slide diagonally like a specimen under a lamp
+    Mat4.rotateY(s.modelMatrix, s.modelMatrix, this.camera.yaw * flyT);
+    Mat4.rotateX(s.modelMatrix, s.modelMatrix, -this.camera.pitch * flyT);
+    Mat4.rotateZ(s.modelMatrix, s.modelMatrix, (pose.roll + Math.sin(timeSec * 0.5) * 0.025) * flyT);
+    Mat4.rotateX(s.modelMatrix, s.modelMatrix, (pose.tiltX + Math.cos(timeSec * 0.6) * 0.03) * flyT);
+    Mat4.rotateY(s.modelMatrix, s.modelMatrix, pose.tiltY * flyT);
+    Mat4.invert(s.invModelMatrix, s.modelMatrix);
   }
 
   _updateHints() {
@@ -882,7 +1009,12 @@ class DexterBoxApp {
       lidMatrix: this.lidMatrix,
       claspMatrix: this.claspMatrix,
       slides: this.slides,
-      boxVisible
+      boxVisible,
+      focusSlide: this.focusSlotIndex,
+      focusAmount: this.revealEase,
+      // Slide is clear of the box walls once lifted, so it can move to the sharp layer
+      focusDetached: this.revealProgress > 0.3,
+      backgroundBlur: this.revealBlur
     });
 
     this.rafId = requestAnimationFrame((t) => this._loop(t));
