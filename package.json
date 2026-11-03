@@ -4,7 +4,7 @@
   "private": true,
   "description": "Dexter Landing Page",
   "scripts": {
-    "start": "npx -y live-server --port=8123",
-    "serve": "npx -y serve -l 8123 ."
+    "start": "npx -y kill-port 8123 && npx -y live-server --port=8123",
+    "serve": "npx -y kill-port 8123 && npx -y serve -l 8123 ."
   }
 }
