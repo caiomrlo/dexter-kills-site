@@ -565,61 +565,81 @@ export function createBloodSpecimenVariants(maxAnisotropy = 8) {
 }
 
 /**
- * 6. Crystal-Clear Microscope Glass Slide Optical Face Map
- * Pure optical clarity with a razor-thin ground edge catchlight and subtle diagonal studio reflection.
- * No artificial inner square that cuts across the blood specimen!
+ * 6. Microscope Glass Slide Surface Maps
+ * - scratchMap: grayscale wear layer (hairline scratches + faint fingerprint smudges).
+ *   The glass shader only reveals it where light is reflected, so it reads as real worn glass.
+ * - normalMap: very low-amplitude float-glass waviness that breaks up perfectly flat reflections.
+ * Generated once and shared by all 24 slides.
  */
 export function createGlassSlideSurfaceMaps(maxAnisotropy = 8) {
-  const width = 512;
-  const height = 256;
+  // --- Scratch / smudge layer (canvas 2D strokes: cheap to generate) ---
+  const sw = 1024;
+  const sh = 352; // ~ slide aspect (1.36 / 0.46)
+  const sCanvas = document.createElement('canvas');
+  sCanvas.width = sw;
+  sCanvas.height = sh;
+  const ctx = sCanvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, sw, sh);
 
-  const alphaCanvas = document.createElement('canvas');
-  alphaCanvas.width = width;
-  alphaCanvas.height = height;
-  const ctx = alphaCanvas.getContext('2d');
-  const img = ctx.createImageData(width, height);
-  const data = img.data;
+  let rng = 1337;
+  const rand = () => {
+    rng = (rng * 16807) % 2147483647;
+    return (rng - 1) / 2147483646;
+  };
 
-  const heightBuf = new Float32Array(width * height);
-
-  for (let y = 0; y < height; y++) {
-    const v = y / height;
-    const ny = (v - 0.5) * 2.0; // -1..1
-    for (let x = 0; x < width; x++) {
-      const u = x / width;
-      const nx = (u - 0.5) * 2.0; // -1..1
-
-      // 1. Gentle optical edge catchlight at the outer perimeter
-      const edgeX = smoothstep(0.95, 1.0, Math.abs(nx));
-      const edgeY = smoothstep(0.92, 1.0, Math.abs(ny));
-      const edgeRim = Math.max(edgeX, edgeY);
-
-      // 2. Subtle diagonal studio light reflection band across the optical face
-      const diag1 = Math.pow(clamp01(1.0 - Math.abs(nx * 0.6 + ny * 0.4 - 0.15)), 3.5) * 0.045;
-      const diag2 = Math.pow(clamp01(1.0 - Math.abs(nx * 0.6 + ny * 0.4 + 0.42)), 4.5) * 0.025;
-      const diagSheen = diag1 + diag2;
-
-      heightBuf[y * width + x] = -edgeRim * 0.05;
-
-      const idx = (y * width + x) * 4;
-      data[idx] = Math.round(228 - edgeRim * 10);
-      data[idx + 1] = Math.round(245 - edgeRim * 2);
-      data[idx + 2] = Math.round(240 - edgeRim * 4);
-
-      // Smooth optical glass alpha profile (avoids harsh contrast lines across stacked slides)
-      const alpha = clamp01(0.085 + diagSheen + edgeRim * 0.11);
-      data[idx + 3] = Math.round(alpha * 255);
-    }
+  // Faint fingerprint / cleaning smudges
+  for (let i = 0; i < 14; i++) {
+    const x = rand() * sw;
+    const y = rand() * sh;
+    const r = 40 + rand() * 120;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const a = 0.05 + rand() * 0.07;
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r * (0.5 + rand() * 0.5), rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  ctx.putImageData(img, 0, 0);
-  const map = new THREE.CanvasTexture(alphaCanvas);
-  map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = maxAnisotropy;
-  map.needsUpdate = true;
+  // Hairline scratches: mostly long and shallow-angled, a few short random nicks
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 90; i++) {
+    const long = rand() < 0.55;
+    const x = rand() * sw;
+    const y = rand() * sh;
+    const ang = long ? (rand() - 0.5) * 0.9 : rand() * Math.PI;
+    const len = long ? 120 + rand() * 420 : 10 + rand() * 60;
+    const bend = (rand() - 0.5) * len * 0.12;
+    const dx = Math.cos(ang) * len;
+    const dy = Math.sin(ang) * len;
+    ctx.strokeStyle = `rgba(255,255,255,${0.18 + rand() * 0.5})`;
+    ctx.lineWidth = 0.5 + rand() * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + dx * 0.5 - dy * 0.02 + bend, y + dy * 0.5 + bend, x + dx, y + dy);
+    ctx.stroke();
+  }
 
-  const normalMap = heightBufferToNormalTexture(heightBuf, width, height, 1.4, false);
+  const scratchMap = new THREE.CanvasTexture(sCanvas);
+  scratchMap.colorSpace = THREE.NoColorSpace;
+  scratchMap.anisotropy = maxAnisotropy;
+  scratchMap.generateMipmaps = true;
+  scratchMap.minFilter = THREE.LinearMipmapLinearFilter;
+  scratchMap.needsUpdate = true;
+
+  // --- Subtle float-glass waviness normal map (low-res is enough) ---
+  const width = 256;
+  const height = 96;
+  const heightBuf = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      heightBuf[y * width + x] = fbm2D(x / 48, y / 24, 3, 7) * 0.06;
+    }
+  }
+  const normalMap = heightBufferToNormalTexture(heightBuf, width, height, 1.0, false);
   normalMap.anisotropy = maxAnisotropy;
 
-  return { map, normalMap };
+  return { scratchMap, normalMap };
 }

@@ -203,35 +203,8 @@ export class TrophyBoxRenderer {
       side: THREE.DoubleSide
     });
 
-    // 5. Microscope Glass Slide — Optical Flat Faces (Group 0)
-    // Uses MeshStandardMaterial so grazing-angle bevels obey material.opacity strictly
-    // without overriding alpha to 1.0 over the stacked slides inside the box!
-    this.glassFaceBaseMat = new THREE.MeshStandardMaterial({
-      color: 0xf2faf8,
-      map: this.glassSurfaceMaps.map,
-      normalMap: this.glassSurfaceMaps.normalMap,
-      normalScale: new THREE.Vector2(0.12, 0.12),
-      transparent: true,
-      opacity: 0.35,
-      roughness: 0.06,
-      metalness: 0.08,
-      envMapIntensity: 0.95,
-      depthWrite: false,
-      side: THREE.FrontSide
-    });
-
-    // 6. Microscope Glass Slide — Chamfered 45° Soda-Lime Ground Glass Edges (Group 1)
-    this.glassEdgeBaseMat = new THREE.MeshStandardMaterial({
-      color: 0xc4ece2,
-      emissive: 0x16382e,
-      emissiveIntensity: 0.35,
-      transparent: true,
-      opacity: 0.22,
-      roughness: 0.52,
-      metalness: 0.02,
-      envMapIntensity: 0.40,
-      depthWrite: false
-    });
+    // 5/6. Glass slide faces + edges are created per slide by _createGlassFaceMaterial()
+    // and _createGlassEdgeMaterial() (each slide needs its own uniforms; the shader program is shared).
 
     // 7. 4 Coagulated Blood Drop Specimen Physical Materials
     // Uses ruby-tinted specularColor (0xff3838) so surface highlights on the 3D meniscus
@@ -258,6 +231,138 @@ export class TrophyBoxRenderer {
         polygonOffsetFactor: -1,
         polygonOffsetUnits: -1
       });
+    });
+  }
+
+  /**
+   * Cheap "fake" optical glass for the slide faces.
+   * - Black albedo: glass has no diffuse colour, only reflections (env + lights) are kept.
+   * - Premultiplied-style blending (ONE, ONE_MINUS_SRC_ALPHA): reflections are added on top,
+   *   while alpha only slightly dims what is behind, so the face reads as see-through glass.
+   * - Fresnel, thin bright bevel rim, view-dependent sheen streak and a shared scratch layer
+   *   are all computed in the fragment shader: no extra render passes or render targets.
+   */
+  _createGlassFaceMaterial(index, hasBlood) {
+    const seed = index + 1.0;
+    const uniforms = {
+      uScratchMap: { value: this.glassSurfaceMaps.scratchMap },
+      uPresence: { value: 1.0 }, // 1 = free-floating hero slide, 0 = stacked inside the box
+      uActive: { value: 0.0 },   // hover / select highlight
+      uBlood: {
+        value: new THREE.Vector3(
+          hasBlood ? 1.0 : 0.0,
+          Math.sin(seed * 17.3) * 0.030,
+          Math.cos(seed * 29.1) * 0.016
+        )
+      },
+      uSeed: { value: seed }
+    };
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      normalMap: this.glassSurfaceMaps.normalMap,
+      normalScale: new THREE.Vector2(0.35, 0.35),
+      roughness: 0.04,
+      metalness: 0.0,
+      envMapIntensity: 1.6,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.FrontSide,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.OneMinusSrcAlphaFactor
+    });
+    mat.userData.glassUniforms = uniforms;
+
+    mat.customProgramCacheKey = () => 'dexter-glass-face-v1';
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGlassUv;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\nvGlassUv = uv;');
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec2 vGlassUv;
+          uniform sampler2D uScratchMap;
+          uniform float uPresence;
+          uniform float uActive;
+          uniform vec3 uBlood;
+          uniform float uSeed;`
+        )
+        .replace(
+          '#include <opaque_fragment>',
+          `
+          vec3 gV = normalize(vViewPosition);
+          vec3 gN = normalize(normal);
+          float gNoV = clamp(abs(dot(gN, gV)), 0.0, 1.0);
+          float gFres = pow(1.0 - gNoV, 4.0);
+
+          // Physical slide coordinates (1.36 x 0.46), centered
+          vec2 gP = (vGlassUv - 0.5) * vec2(1.36, 0.46);
+          vec2 gEd = vec2(0.68, 0.23) - abs(gP);
+          float gEdge = min(gEd.x, gEd.y);
+          float gRim = 1.0 - smoothstep(0.0, 0.009, gEdge);      // razor-thin polished bevel
+          float gRimGlow = 1.0 - smoothstep(0.0, 0.045, gEdge);  // soft inner glow along the edge
+
+          // Soft-compress strong reflections so grazing angles stay glassy instead of milky,
+          // and sun-like light hits don't blow out into big bloom blobs
+          vec3 gSpec = totalSpecular * 1.35;
+          gSpec = gSpec / (1.0 + gSpec * 0.9);
+          float gSpecLum = dot(gSpec, vec3(0.299, 0.587, 0.114));
+
+          // View-dependent diagonal sheen streak that slides across the face as the slide turns
+          float gT = gP.x * 0.32 + gP.y;
+          float gC = gN.x * 0.55 - gN.y * 0.35 + sin(uSeed * 3.7) * 0.12;
+          float gStreak = exp(-pow((gT - gC) / 0.07, 2.0)) * 0.55 + exp(-pow((gT - gC + 0.16) / 0.025, 2.0)) * 0.35;
+
+          // Wear layer: only visible where light reflects (plus a whisper everywhere)
+          float gScratch = texture2D(uScratchMap, vGlassUv).r;
+
+          // Faint crimson tint bleeding into the glass around the blood drop
+          float gBloodD = length(gP - uBlood.yz);
+          float gBloodHalo = uBlood.x * exp(-pow(gBloodD / 0.24, 2.0));
+
+          // Rim tint: cool soda-lime green, warming to crimson at one end like a red back light
+          float gRedSide = smoothstep(0.1, 0.68, gP.x * sign(sin(uSeed * 5.1) + 0.001));
+          vec3 gRimCol = mix(vec3(0.80, 0.96, 0.90), vec3(1.0, 0.28, 0.24), gRedSide * 0.45);
+
+          vec3 gCol = gSpec * 0.85;
+          gCol += gRimCol * gRim * (0.95 + gSpecLum * 2.5 + gFres) * (0.6 + 0.4 * uPresence);
+          gCol += gRimCol * gRimGlow * 0.06;
+          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence); // faint glass body haze
+          gCol += vec3(0.85, 0.92, 0.95) * gStreak * (0.06 + gSpecLum * 0.6) * (0.5 + 0.5 * uPresence);
+          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4);
+          gCol += vec3(0.55, 0.02, 0.03) * gBloodHalo * 0.07;
+          gCol += vec3(1.0, 0.86, 0.52) * uActive * (0.05 + gRim * 0.9 + gRimGlow * 0.12);
+
+          // Alpha = how much the glass dims what is behind it (mostly clear)
+          float gA = 0.03 + 0.05 * uPresence + gFres * 0.30 + gRim * 0.40 + gSpecLum * 0.25 + gScratch * 0.04;
+          gl_FragColor = vec4(gCol, clamp(gA, 0.0, 0.92));
+          `
+        );
+    };
+    return mat;
+  }
+
+  /** Chamfered ground-glass side faces (the slide's thickness), bright and slightly green. */
+  _createGlassEdgeMaterial() {
+    return new THREE.MeshStandardMaterial({
+      color: 0xbfe8dc,
+      emissive: 0x2c5c50,
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.7,
+      roughness: 0.25,
+      metalness: 0.0,
+      envMapIntensity: 1.0,
+      depthWrite: false
     });
   }
 
@@ -295,8 +400,9 @@ export class TrophyBoxRenderer {
       const slideGroup = new THREE.Group();
       slideGroup.matrixAutoUpdate = false;
 
-      const faceMat = this.glassFaceBaseMat.clone();
-      const edgeMat = this.glassEdgeBaseMat.clone();
+      const hasBlood = i < 13;
+      const faceMat = this._createGlassFaceMaterial(i, hasBlood);
+      const edgeMat = this._createGlassEdgeMaterial();
 
       const glassMesh = new THREE.Mesh(sharedSlideGeom, [faceMat, edgeMat]);
       glassMesh.castShadow = false;
@@ -614,35 +720,22 @@ export class TrophyBoxRenderer {
       const isHighFloating = s.worldPos[1] > 1.4 ? Math.min(1.0, (s.worldPos[1] - 1.4) / 2.0) : 0.0;
       const activeAmt = Math.max(s.hoverProgress, s.selectProgress);
 
-      slideObj.faceMat.opacity = 0.52 + isHighFloating * 0.48 + activeAmt * 0.30;
-      slideObj.faceMat.envMapIntensity = 0.85 + isHighFloating * 0.45 + activeAmt * 0.35;
+      const gu = slideObj.faceMat.userData.glassUniforms;
+      gu.uPresence.value = isHighFloating;
+      gu.uActive.value = activeAmt;
 
-      const baseEdgeOpacity = 0.42 + isHighFloating * 0.14;
-      if (activeAmt > 0.005) {
-        slideObj.edgeMat.color.setRGB(
-          0.85 + activeAmt * 0.15,
-          0.95 - activeAmt * 0.07,
-          0.90 - activeAmt * 0.40
-        );
-        slideObj.edgeMat.emissive.setRGB(
-          0.12 + activeAmt * 0.45,
-          0.24 + activeAmt * 0.28,
-          0.20
-        );
-        slideObj.edgeMat.opacity = baseEdgeOpacity + activeAmt * 0.45;
-      } else {
-        slideObj.edgeMat.color.setRGB(
-          0.86 - isHighFloating * 0.30,
-          0.96 - isHighFloating * 0.12,
-          0.92 - isHighFloating * 0.18
-        );
-        slideObj.edgeMat.emissive.setRGB(
-          0.14 - isHighFloating * 0.06,
-          0.26 - isHighFloating * 0.08,
-          0.22 - isHighFloating * 0.06
-        );
-        slideObj.edgeMat.opacity = baseEdgeOpacity;
-      }
+      // Thickness edges: bright soda-lime green, warming to gold on hover/select
+      slideObj.edgeMat.color.setRGB(
+        0.75 + activeAmt * 0.25,
+        0.91 - activeAmt * 0.05,
+        0.86 - activeAmt * 0.40
+      );
+      slideObj.edgeMat.emissive.setRGB(
+        0.17 + activeAmt * 0.45,
+        0.36 + activeAmt * 0.20,
+        0.31 - activeAmt * 0.10
+      );
+      slideObj.edgeMat.opacity = 0.55 + isHighFloating * 0.25 + activeAmt * 0.20;
 
       const dx = s.worldPos[0] - camX;
       const dy = s.worldPos[1] - camY;
