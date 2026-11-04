@@ -548,6 +548,13 @@ class DexterBoxApp {
           }
         });
         gsap.to(['#webgpu-canvas', '.kills-stage'], { yPercent: -28, ease: 'none', scrollTrigger: finaleScroll });
+        // "VÍTIMA" behind the headline: surfaces slowly from below, a bit slower than the page
+        const ghost = finaleSection.querySelector('.finale-ghost');
+        if (ghost) {
+          gsap.fromTo(ghost,
+            { yPercent: 18, opacity: 0, scale: 1.06 },
+            { yPercent: -4, opacity: 1, scale: 1, ease: 'power1.out', scrollTrigger: { ...finaleScroll, scrub: 1.2 } });
+        }
       }
 
       ScrollTrigger.refresh();
