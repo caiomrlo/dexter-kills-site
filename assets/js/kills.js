@@ -1,8 +1,10 @@
 /**
  * Kill dossiers shown when a blood slide is pulled out of the Trophy Box.
  * To add a new kill: drop the photo in assets/img/kills/ and add an entry here.
- * The polaroid frame (assets/img/polaroid-frame.webp) is shared by every kill.
+ * Each kill belongs to a series (see SERIES below): it picks the polaroid frame,
+ * the small logo above the dossier and the tint of the background haze.
  *
+ * - series: 'new-blood' | 'resurrection'
  * - slotIndex: which slide in the box holds this kill (0..12 carry blood)
  * - headline: plain text; wrap the accent word in *asterisks*
  * - photoPosition: CSS object-position used to keep the face inside the polaroid window
@@ -10,9 +12,23 @@
  * - photo: null shows an empty polaroid
  * Order here is the order the user steps through (button / scroll down = next).
  */
+export const SERIES = {
+  'new-blood': {
+    title: 'Dexter: New Blood',
+    frame: 'assets/img/series/frame-new-blood.webp',
+    logo: 'assets/img/series/logo-new-blood.png'
+  },
+  resurrection: {
+    title: 'Dexter: Resurrection',
+    frame: 'assets/img/series/frame-resurrection.webp',
+    logo: 'assets/img/series/logo-resurrection.png'
+  }
+};
+
 export const KILLS = [
   {
     slotIndex: 0,
+    series: 'new-blood',
     number: '01',
     name: 'Paul Bennett',
     method: 'Estrangulamento',
@@ -27,6 +43,7 @@ export const KILLS = [
   // PLACEHOLDER: replace with the real victim data and photo
   {
     slotIndex: 1,
+    series: 'resurrection',
     number: '02',
     name: 'Nome da Vítima',
     method: 'Método',
@@ -38,6 +55,7 @@ export const KILLS = [
   // PLACEHOLDER: replace with the real victim data and photo
   {
     slotIndex: 2,
+    series: 'new-blood',
     number: '03',
     name: 'Nome da Vítima',
     method: 'Método',

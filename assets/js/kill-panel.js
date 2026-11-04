@@ -1,3 +1,5 @@
+import { SERIES } from './kills.js';
+
 /**
  * Kill dossier panel (left side) shown while a blood slide is in focus.
  * Builds the markup from a KILLS entry and plays a GSAP entrance / exit.
@@ -99,7 +101,12 @@ export class KillPanel {
 
   setKill(kill, index = 0, total = 1) {
     if (this.swapTween) this.swapTween.kill();
+    const seriesKey = SERIES[kill.series] ? kill.series : 'new-blood';
+    const series = SERIES[seriesKey];
+    this.root.dataset.series = seriesKey;
+    if (this.scrim) this.scrim.dataset.series = seriesKey;
     this.content.innerHTML = `
+      <img class="kill-series-logo" src="${escapeHtml(series.logo)}" alt="${escapeHtml(series.title)}" />
       <div class="kill-top">
         <figure class="kill-polaroid">
           <div class="kill-photo">
@@ -108,7 +115,7 @@ export class KillPanel {
                    style="object-position:${escapeHtml(kill.photoPosition || '50% 30%')};transform-origin:${escapeHtml(kill.photoPosition || '50% 30%')};scale:${Number(kill.photoZoom) || 1}" />`
               : '<span class="kill-photo-empty" aria-hidden="true">?</span>'}
           </div>
-          <img class="kill-frame" src="assets/img/polaroid-frame.webp" alt="" />
+          <img class="kill-frame" src="${escapeHtml(series.frame)}" alt="" />
           ${SPATTER}
           ${PAPERCLIP}
         </figure>
@@ -144,6 +151,7 @@ export class KillPanel {
     gsap.set(this.content, { opacity: 1, y: 0, filter: 'none' });
 
     this.tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } })
+      .fromTo(q('.kill-series-logo'), { y: -14, opacity: 0 }, { y: 0, opacity: 1, duration: 1.0 }, 0)
       .fromTo(q('.kill-polaroid'),
         { y: -90, rotate: -14, opacity: 0, scale: 1.08 },
         { y: 0, rotate: -3, opacity: 1, scale: 1, duration: 1.3 }, 0.1)
