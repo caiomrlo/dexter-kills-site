@@ -430,15 +430,6 @@ html, body {
   mix-blend-mode: multiply;
 }
 
-.kill-clip {
-  position: absolute;
-  top: -10%;
-  left: 24%;
-  width: 13%;
-  rotate: 8deg;
-  filter: drop-shadow(1px 3px 2px rgba(0, 0, 0, 0.6));
-}
-
 .kill-id {
   min-width: 0;
 }
@@ -603,10 +594,6 @@ html, body {
   outline: none;
 }
 
-.kill-prev:hover:not(:disabled) svg {
-  transform: translateX(-3px);
-}
-
 .kill-prev:disabled {
   cursor: default;
   opacity: 0.35;
@@ -682,10 +669,6 @@ html, body {
 
 .kill-next:hover:not(:disabled)::before {
   translate: 100% 0;
-}
-
-.kill-next:hover:not(:disabled) svg {
-  transform: translateX(4px);
 }
 
 .kill-next:disabled {

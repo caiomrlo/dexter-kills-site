@@ -19,16 +19,6 @@ const TV_ICON = `
   <path d="M35 21v11"/>
 </svg>`;
 
-const PAPERCLIP = `
-<svg class="kill-clip" viewBox="0 0 40 110" fill="none" aria-hidden="true">
-  <path d="M27 30V14a9 9 0 0 0-18 0v66a12 12 0 0 0 24 0V24" stroke="url(#clipMetal)" stroke-width="3.4" stroke-linecap="round"/>
-  <defs>
-    <linearGradient id="clipMetal" x1="0" y1="0" x2="40" y2="0" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7d7a76"/><stop offset=".45" stop-color="#f1eee8"/><stop offset="1" stop-color="#8c8984"/>
-    </linearGradient>
-  </defs>
-</svg>`;
-
 // Dried blood spatter painted over the bottom of the polaroid
 const SPATTER = `
 <svg class="kill-spatter" viewBox="0 0 200 120" aria-hidden="true">
@@ -117,7 +107,6 @@ export class KillPanel {
           </div>
           <img class="kill-frame" src="${escapeHtml(series.frame)}" alt="" />
           ${SPATTER}
-          ${PAPERCLIP}
         </figure>
         <div class="kill-id">
           <h3 class="kill-name">${escapeHtml(kill.name)}</h3>
@@ -155,7 +144,6 @@ export class KillPanel {
       .fromTo(q('.kill-polaroid'),
         { y: -90, rotate: -14, opacity: 0, scale: 1.08 },
         { y: 0, rotate: -3, opacity: 1, scale: 1, duration: 1.3 }, 0.1)
-      .fromTo(q('.kill-clip'), { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.8 }, 0.55)
       .fromTo(q('.kill-spatter'), { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: 'power4.out' }, 0.7)
       .fromTo(nameChars,
         { yPercent: 110, opacity: 0 },
