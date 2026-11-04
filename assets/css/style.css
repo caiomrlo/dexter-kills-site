@@ -196,6 +196,67 @@ html, body {
   pointer-events: none;
 }
 
+/* Closed-box stage (Section 5): sits behind the transparent 3D canvas */
+.kills-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.kills-bg {
+  position: absolute;
+  inset: -12% 0;
+  background: #000 url('../img/backgrounds/kills-bg.webp') center / cover no-repeat;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.kills-headline-wrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 46vh; /* upper part of the screen; the box only grazes the bottom of the letters */
+  /* Lets the red haze and floor texture bleed through the letters */
+  mix-blend-mode: hard-light;
+}
+
+.kills-headline {
+  font-family: 'Barlow Condensed', var(--font-display);
+  font-weight: 400;
+  font-style: italic;
+  text-transform: uppercase;
+  font-size: clamp(4.5rem, 19vw, 22rem);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  will-change: transform, opacity, filter;
+}
+
+.kills-word--light {
+  background: linear-gradient(180deg, #f6f1e9 0%, var(--text-warm-ivory) 45%, #b9ada0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: var(--text-warm-ivory);
+  padding-right: 0.08em;
+  filter: drop-shadow(0 18px 50px rgba(0, 0, 0, 0.7));
+}
+
+.kills-word--red {
+  background: var(--blood-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: var(--accent-blood-bright);
+  padding-right: 0.08em; /* keeps the italic K tail inside the clipped gradient */
+  filter: drop-shadow(0 18px 50px rgba(0, 0, 0, 0.75));
+}
+
 #webgpu-canvas {
   position: fixed;
   inset: 0;

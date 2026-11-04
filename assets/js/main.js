@@ -147,6 +147,8 @@ class DexterBoxApp {
     this.smoothOutro = 0.0;
     this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
     this.claspHintEl = document.querySelector('.clasp-hint');
+    this.killsHeadlineWrap = document.querySelector('.kills-headline-wrap');
+    this.killsHeadlineFade = -1;
 
     // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows.
     // The user then steps through KILLS with the button, wheel, touch swipe or arrow keys.
@@ -458,6 +460,8 @@ class DexterBoxApp {
             if (self.progress < 0.3) this.outroUnlocked = false;
           }
         });
+
+        this._initKillsStage(gsap, outroSection);
       }
 
       ScrollTrigger.refresh();
@@ -1093,7 +1097,56 @@ class DexterBoxApp {
     Mat4.invert(s.invModelMatrix, s.modelMatrix);
   }
 
+  /**
+   * Closed-box stage: the red haze fades in with a slow parallax drift, and the
+   * "DEXTER KILLS" title grows out of the dark behind the box as the outro scrolls.
+   */
+  _initKillsStage(gsap, outroSection) {
+    const bg = document.querySelector('.kills-bg');
+    const headline = document.querySelector('.kills-headline');
+    if (!bg || !headline) return;
+
+    gsap.set(bg, { opacity: 0, yPercent: 6, scale: 1.08 });
+    gsap.set(headline, {
+      opacity: 0,
+      scale: 0.55,
+      y: () => innerHeight * 0.32,
+      letterSpacing: '0.18em',
+      filter: 'blur(18px)'
+    });
+
+    const scroll = { trigger: outroSection, start: 'top 90%', end: 'bottom bottom', scrub: 1.4 };
+
+    // Background: fade in early, then keep drifting for the whole outro (parallax)
+    const bgTl = gsap.timeline({ scrollTrigger: scroll, defaults: { ease: 'none' } });
+    bgTl
+      .to(bg, { yPercent: -6, scale: 1.0, duration: 1 }, 0)
+      .to(bg, { opacity: 1, duration: 0.35, ease: 'power1.inOut' }, 0)
+      // The page-wide grey haze would wash out the red background, so it bows out here
+      .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
+
+    // Headline: hidden below, then rises out of the dark and grows until it lands at full size
+    gsap.timeline({ scrollTrigger: { ...scroll, start: 'top 40%', invalidateOnRefresh: true } }).to(headline, {
+      opacity: 0.86,
+      scale: 1,
+      y: 0,
+      letterSpacing: '-0.01em',
+      filter: 'blur(0px)',
+      ease: 'power2.out',
+      duration: 1
+    });
+  }
+
   _updateHints() {
+    // Kill reveal: the title steps back so the dossier reads cleanly
+    if (this.killsHeadlineWrap) {
+      const fade = Math.round((1 - Math.min(1, this.revealProgress * 2)) * 100) / 100;
+      if (fade !== this.killsHeadlineFade) {
+        this.killsHeadlineFade = fade;
+        this.killsHeadlineWrap.style.opacity = String(fade);
+      }
+    }
+
     // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
     if (this.claspHintEl) {
       const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);

@@ -91,10 +91,11 @@ export class TrophyBoxRenderer {
       canvas: this.canvas,
       antialias: true,
       powerPreference: 'high-performance',
-      alpha: false
+      // Transparent so the closed-box stage (background + headline) shows behind the box
+      alpha: true
     });
 
-    this.renderer.setClearColor(0x000000, 1.0);
+    this.renderer.setClearColor(0x000000, 0.0);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -104,7 +105,7 @@ export class TrophyBoxRenderer {
     this.device = this.renderer;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000000);
+    this.scene.background = null;
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 50.0);
 
