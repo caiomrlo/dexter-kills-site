@@ -10,6 +10,7 @@ import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 import { KILLS } from './kills.js';
 import { KillPanel } from './kill-panel.js';
+import { VictimList, LIST_ICON } from './victim-list.js';
 
 // Camera framing when the box is OPEN (closer framing filling more vertical viewport)
 const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 9.1, center: [0.0, 1.58, -0.20] };
@@ -162,6 +163,16 @@ class DexterBoxApp {
     this.revealBlur = 0.0; // depth-of-field strength on the background box
     const panelEl = document.getElementById('kill-panel');
     this.killPanel = panelEl ? new KillPanel(panelEl) : null;
+    this.pendingKill = null; // victim picked from the list while a slide is still travelling
+
+    // Victims archive: opened from the button under the shut box or from the dossier nav
+    this.victimList = new VictimList();
+    this.listBtn = document.createElement('button');
+    this.listBtn.type = 'button';
+    this.listBtn.className = 'victim-list-trigger';
+    this.listBtn.innerHTML = `${LIST_ICON}<span>Ver lista de vítimas</span>`;
+    document.body.appendChild(this.listBtn);
+    this.listBtnShown = -1;
 
     // Box State (Starts OPEN as requested)
     this.isOpen = true;
@@ -275,6 +286,46 @@ class DexterBoxApp {
     return true;
   }
 
+  /** Open a victim picked from the list: unlocks the shut box, or jumps from the current dossier. */
+  openKill(index) {
+    if (!KILLS[index]) return;
+    if (!this.outroUnlocked) {
+      if (this.isOpen && this.outroProgress > 0.55) this._unlockOutro(index);
+      return;
+    }
+    if (index === this.killIndex) return;
+    this.pendingKill = index;
+    this._applyPendingKill();
+  }
+
+  _applyPendingKill() {
+    if (this.pendingKill === null || !this.isRevealSettled) return;
+    const next = this.pendingKill;
+    this.pendingKill = null;
+    if (next === this.killIndex) return;
+    const dir = next > this.killIndex ? 1 : -1;
+    this.killIndex = next;
+    if (this.killPanel) this.killPanel.switchTo(KILLS[next], next, KILLS.length, dir);
+  }
+
+  // Box shut at the end of the outro -> open it and pull out the slide of KILLS[index]
+  _unlockOutro(index = 0) {
+    this.outroUnlocked = true;
+    this.killIndex = index;
+    this.pendingKill = null;
+    if (this.killPanel) this.killPanel.setKill(KILLS[index], index, KILLS.length);
+    this._setNavLock(true);
+    this.wheelConsumed = true; // a click is not a wheel gesture; wait for a fresh one
+    this.selectedSlide = -1;
+    this.hoveredSlide = -1;
+    this.canvas.classList.remove('pointer-interactive');
+    // Frame the open box straight on before the slide leaves it
+    this.camera.targetYaw = OPEN_VIEW.yaw;
+    this.camera.targetPitch = OPEN_VIEW.pitch;
+    this.camera.targetDistance = OPEN_VIEW.distance;
+    this.camera.targetCenter = [...OPEN_VIEW.center];
+  }
+
   _setNavLock(locked) {
     if (this.navLocked === locked) return;
     this.navLocked = locked;
@@ -287,7 +338,18 @@ class DexterBoxApp {
       this.killPanel.setKill(KILLS[this.killIndex], this.killIndex, KILLS.length);
       this.killPanel.onNext = () => this.stepKill(1);
       this.killPanel.onPrev = () => this.stepKill(-1);
+      this.killPanel.onList = () => this.victimList.open(this.killIndex);
     }
+    this.listBtn.addEventListener('click', () => this.victimList.open(-1));
+    this.victimList.onSelect = (index) => this.openKill(index);
+    // A paused ScrollSmoother swallows wheel events on anything that can't scroll vertically,
+    // which would kill the archive's sideways scroll. The archive blocks page scroll itself instead.
+    this.victimList.onOpen = () => {
+      if (this.smoother) this.smoother.paused(false);
+    };
+    this.victimList.onClose = () => {
+      if (this.smoother) this.smoother.paused(this.navLocked);
+    };
 
     try {
       await this.renderer.init();
@@ -539,7 +601,7 @@ class DexterBoxApp {
     window.addEventListener(
       'wheel',
       (e) => {
-        if (!this.navLocked) return;
+        if (!this.navLocked || this.victimList.isOpen) return;
         e.preventDefault();
         const now = performance.now();
         if (now - this.lastWheelTime > 260) this.wheelConsumed = false;
@@ -555,17 +617,17 @@ class DexterBoxApp {
       if (this.navLocked) this.touchStartY = e.touches[0].clientY;
     }, { passive: true });
     window.addEventListener('touchmove', (e) => {
-      if (this.navLocked) e.preventDefault();
+      if (this.navLocked && !this.victimList.isOpen) e.preventDefault();
     }, { passive: false });
     window.addEventListener('touchend', (e) => {
-      if (!this.navLocked || this.touchStartY === null) return;
+      if (!this.navLocked || this.victimList.isOpen || this.touchStartY === null) return;
       const dy = this.touchStartY - e.changedTouches[0].clientY;
       this.touchStartY = null;
       if (Math.abs(dy) > 40) this.stepKill(dy > 0 ? 1 : -1);
     });
 
     window.addEventListener('keydown', (e) => {
-      if (!this.navLocked) return;
+      if (!this.navLocked || this.victimList.isOpen) return;
       const down = ['ArrowDown', 'PageDown', ' ', 'ArrowRight'];
       const up = ['ArrowUp', 'PageUp', 'ArrowLeft'];
       if (down.includes(e.key)) {
@@ -710,21 +772,7 @@ class DexterBoxApp {
 
     // Box shut by the outro scroll: clicking the lid/clasp reopens it
     if (this.isOpen && this.outroProgress > 0.55 && !this.outroUnlocked) {
-      if (hit.hitLidOrLatch) {
-        this.outroUnlocked = true;
-        this.killIndex = 0;
-        if (this.killPanel) this.killPanel.setKill(KILLS[0], 0, KILLS.length);
-        this._setNavLock(true);
-        this.wheelConsumed = true; // a click is not a wheel gesture; wait for a fresh one
-        this.selectedSlide = -1;
-        this.hoveredSlide = -1;
-        this.canvas.classList.remove('pointer-interactive');
-        // Frame the open box straight on before the slide leaves it
-        this.camera.targetYaw = OPEN_VIEW.yaw;
-        this.camera.targetPitch = OPEN_VIEW.pitch;
-        this.camera.targetDistance = OPEN_VIEW.distance;
-        this.camera.targetCenter = [...OPEN_VIEW.center];
-      }
+      if (hit.hitLidOrLatch) this._unlockOutro(0);
       return;
     }
 
@@ -800,6 +848,8 @@ class DexterBoxApp {
     if (anyDetached) this.blurArmed = true;
     else if (!this.outroUnlocked) this.blurArmed = false;
     this.revealBlur = this.blurArmed ? camReveal : 0.0;
+
+    this._applyPendingKill();
 
     if (this.killPanel) {
       if (rp > 0.55 && revealTarget > 0.5) this.killPanel.show();
@@ -1161,6 +1211,18 @@ class DexterBoxApp {
           `translate(${((nx * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((0.5 - ny * 0.5) * innerHeight).toFixed(1)}px)`;
       }
       this.claspHintEl.style.opacity = String(visible);
+    }
+
+    // "Ver lista de vítimas" under the shut box: same timing as the clasp cue
+    if (this.listBtn) {
+      const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);
+      const shown = this.outroUnlocked || this.victimList.isOpen ? 0 : Math.round(shut * 100) / 100;
+      if (shown !== this.listBtnShown) {
+        this.listBtnShown = shown;
+        this.listBtn.style.opacity = String(shown);
+        this.listBtn.style.transform = `translate(-50%, ${((1 - shown) * 18).toFixed(1)}px)`;
+        this.listBtn.classList.toggle('is-live', shown > 0.6);
+      }
     }
   }
 

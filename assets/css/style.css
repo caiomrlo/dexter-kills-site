@@ -821,3 +821,476 @@ html, body {
     line-height: 1.0;
   }
 }
+
+/* ------------------------------------------------------------------
+   Victims archive: button under the shut box, list button in the
+   dossier nav and the full-screen list (built in assets/js/victim-list.js)
+   ------------------------------------------------------------------ */
+
+.victim-list-trigger {
+  position: fixed;
+  z-index: 7;
+  left: 50%;
+  bottom: clamp(28px, 8vh, 88px);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 26px 14px 22px;
+  border: 1px solid rgba(232, 225, 214, 0.22);
+  border-radius: 999px;
+  background: rgba(10, 6, 6, 0.55);
+  color: var(--text-warm-ivory);
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 18px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.3s, background 0.4s, box-shadow 0.4s;
+}
+
+.victim-list-trigger.is-live {
+  pointer-events: auto;
+}
+
+.victim-list-trigger svg {
+  width: 17px;
+  height: 17px;
+  color: #ff4a52;
+}
+
+.victim-list-trigger:hover,
+.victim-list-trigger:focus-visible {
+  border-color: rgba(255, 74, 82, 0.85);
+  background: rgba(80, 8, 12, 0.55);
+  box-shadow: 0 0 28px 2px rgba(214, 34, 43, 0.3), 0 18px 40px rgba(0, 0, 0, 0.6);
+  outline: none;
+}
+
+/* Round list button next to "Próxima vítima" */
+.kill-list-btn {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(232, 225, 214, 0.22);
+  border-radius: 50%;
+  background: rgba(12, 9, 9, 0.45);
+  color: var(--text-warm-ivory);
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  transition: border-color 0.3s, box-shadow 0.4s, background 0.4s;
+}
+
+.kill-list-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.kill-list-btn:hover,
+.kill-list-btn:focus-visible {
+  border-color: rgba(255, 74, 82, 0.9);
+  background: rgba(80, 8, 12, 0.5);
+  box-shadow: 0 0 24px 1px rgba(214, 34, 43, 0.3), 0 16px 36px rgba(0, 0, 0, 0.55);
+  outline: none;
+}
+
+.victim-list {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  touch-action: none;
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+  color: var(--text-warm-ivory);
+}
+
+.victim-list.is-open {
+  display: block;
+}
+
+.victim-list-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 110%, rgba(120, 6, 12, 0.38), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 0% 0%, rgba(90, 6, 10, 0.25), transparent 70%),
+    rgba(4, 2, 2, 0.9);
+  backdrop-filter: blur(14px) saturate(0.6);
+}
+
+/* Film grain over the archive */
+.victim-list-backdrop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.victim-list-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: clamp(28px, 7vh, 80px) 0 clamp(28px, 6vh, 72px);
+}
+
+.victim-list-head {
+  flex: none;
+  padding: 0 clamp(16px, 6vw, 112px);
+  margin-bottom: clamp(24px, 5vh, 56px);
+}
+
+
+.victim-list-title {
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-weight: 400;
+  font-style: italic;
+  text-transform: uppercase;
+  font-size: clamp(3.4rem, 9vw, 8.5rem);
+  line-height: 0.85;
+  letter-spacing: -0.01em;
+  word-spacing: -0.12em;
+}
+
+.victim-list-title span:first-child {
+  background: linear-gradient(180deg, #f6f1e9 0%, var(--text-warm-ivory) 45%, #b9ada0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-right: 0.06em;
+}
+
+.victim-list-title .accent {
+  background: var(--blood-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-right: 0.08em;
+}
+
+.victim-list-close {
+  position: absolute;
+  z-index: 2;
+  top: clamp(16px, 3vw, 40px);
+  right: clamp(16px, 3vw, 40px);
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid rgba(232, 225, 214, 0.22);
+  border-radius: 50%;
+  background: rgba(12, 9, 9, 0.5);
+  color: var(--text-warm-ivory);
+  cursor: pointer;
+  transition: border-color 0.3s, background 0.4s, box-shadow 0.4s;
+}
+
+.victim-list-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.victim-list-close:hover,
+.victim-list-close:focus-visible {
+  border-color: rgba(255, 74, 82, 0.9);
+  background: rgba(80, 8, 12, 0.5);
+  box-shadow: 0 0 24px 1px rgba(214, 34, 43, 0.3);
+  outline: none;
+}
+
+/* Full-bleed strip that scrolls sideways (wheel is mapped to it in victim-list.js) */
+.victim-list-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(48px, 6vw, 112px);
+  padding: 0 clamp(16px, 6vw, 112px);
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 clamp(16px, 4vw, 72px), #000 calc(100% - clamp(16px, 4vw, 72px)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 clamp(16px, 4vw, 72px), #000 calc(100% - clamp(16px, 4vw, 72px)), transparent 100%);
+}
+
+.victim-list-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* Series: logo on top, its seasons side by side underneath */
+.victim-series {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.victim-seasons {
+  display: flex;
+  gap: clamp(28px, 3.5vw, 56px);
+}
+
+.victim-season {
+  flex: none;
+  width: clamp(340px, 30vw, 440px);
+}
+
+.victim-series-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(214, 34, 43, 0.45);
+}
+
+.victim-series-logo {
+  height: clamp(36px, 4vw, 52px);
+  width: auto;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.7));
+}
+
+.victim-series-count {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  line-height: 1;
+  color: rgba(232, 225, 214, 0.18);
+}
+
+.victim-seasons .victim-season {
+  margin-top: 26px;
+}
+
+.victim-season-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #ff4a52;
+}
+
+.victim-season-title i {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(214, 34, 43, 0.4), transparent);
+}
+
+.victim-season-title em {
+  font-style: normal;
+  color: rgba(232, 225, 214, 0.35);
+  letter-spacing: 0.18em;
+}
+
+.victim-items {
+  list-style: none;
+}
+
+.victim-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.4em 46px 1fr;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 44px 12px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(232, 225, 214, 0.08);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* Blood wash sweeping in from the left on hover */
+.victim-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(139, 13, 20, 0.45), rgba(139, 13, 20, 0.08) 60%, transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.victim-item > * {
+  position: relative;
+}
+
+.victim-num {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: rgba(232, 225, 214, 0.3);
+  transition: color 0.3s;
+}
+
+.victim-thumb {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #15100e;
+  box-shadow: inset 0 0 0 1px rgba(232, 225, 214, 0.12);
+}
+
+.victim-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1) contrast(1.1) brightness(0.7);
+  transition: filter 0.5s;
+}
+
+.victim-thumb b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  color: rgba(232, 225, 214, 0.3);
+}
+
+.victim-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.victim-name {
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+  font-weight: 400;
+  font-style: italic;
+  text-transform: uppercase;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1), color 0.3s;
+}
+
+.victim-ep {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(232, 225, 214, 0.42);
+}
+
+.victim-go {
+  position: absolute !important;
+  right: 6px;
+  top: calc(50% - 17px);
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #ff4a52;
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: opacity 0.35s, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.victim-go svg {
+  width: 18px;
+  height: 18px;
+}
+
+.victim-item:hover::before,
+.victim-item:focus-visible::before {
+  transform: scaleX(1);
+}
+
+.victim-item:focus-visible {
+  outline: none;
+}
+
+.victim-item:hover .victim-num,
+.victim-item:focus-visible .victim-num {
+  color: #ff4a52;
+}
+
+.victim-item:hover .victim-thumb img,
+.victim-item:focus-visible .victim-thumb img {
+  filter: grayscale(0.2) contrast(1.05) brightness(0.95) sepia(0.25);
+}
+
+.victim-item:hover .victim-name,
+.victim-item:focus-visible .victim-name {
+  transform: translateX(6px);
+}
+
+.victim-item:hover .victim-go,
+.victim-item:focus-visible .victim-go {
+  opacity: 1;
+  transform: none;
+}
+
+/* Victim whose dossier is open right now */
+.victim-item.is-active .victim-num {
+  color: #ff4a52;
+}
+
+.victim-item.is-active .victim-name::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 12px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: #ff3a43;
+  box-shadow: 0 0 12px 2px rgba(255, 40, 50, 0.6);
+}
+
+@media (max-width: 600px) {
+  .victim-item {
+    grid-template-columns: 2.2em 40px 1fr;
+    gap: 12px;
+    padding-right: 8px;
+  }
+
+  .victim-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .victim-go {
+    display: none;
+  }
+
+  .victim-list-close {
+    width: 46px;
+    height: 46px;
+  }
+
+  .victim-list-head {
+    padding-right: 72px;
+  }
+
+  .victim-season {
+    width: min(80vw, 330px);
+  }
+}

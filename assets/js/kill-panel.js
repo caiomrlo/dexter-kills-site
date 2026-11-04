@@ -1,4 +1,5 @@
 import { SERIES } from './kills.js';
+import { LIST_ICON } from './victim-list.js';
 
 /**
  * Kill dossier panel (left side) shown while a blood slide is in focus.
@@ -62,6 +63,7 @@ export class KillPanel {
     this.swapTween = null;
     this.onNext = null;
     this.onPrev = null;
+    this.onList = null;
 
     // Swappable dossier content
     this.root.innerHTML = '<div class="kill-content"></div>';
@@ -77,7 +79,8 @@ export class KillPanel {
       <span class="kill-count"><b>01</b><span>/</span><em>01</em></span>
       <button type="button" class="kill-next">
         <span class="kill-next-label">Próxima vítima</span>${ARROW_ICON}
-      </button>`;
+      </button>
+      <button type="button" class="kill-list-btn" aria-label="Lista de vítimas" title="Lista de vítimas">${LIST_ICON}</button>`;
     this.root.after(this.nav);
     this.prevBtn = this.nav.querySelector('.kill-prev');
     this.nextBtn = this.nav.querySelector('.kill-next');
@@ -86,6 +89,9 @@ export class KillPanel {
     });
     this.nextBtn.addEventListener('click', () => {
       if (this.onNext) this.onNext();
+    });
+    this.nav.querySelector('.kill-list-btn').addEventListener('click', () => {
+      if (this.onList) this.onList();
     });
   }
 
