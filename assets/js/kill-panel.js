@@ -1,5 +1,5 @@
 import { SERIES } from './kills.js';
-import { LIST_ICON } from './victim-list.js';
+import { LIST_ICON, CLOSE_ICON } from './victim-list.js';
 
 /**
  * Kill dossier panel (left side) shown while a blood slide is in focus.
@@ -64,6 +64,7 @@ export class KillPanel {
     this.onNext = null;
     this.onPrev = null;
     this.onList = null;
+    this.onClose = null;
 
     // Swappable dossier content
     this.root.innerHTML = '<div class="kill-content"></div>';
@@ -92,6 +93,17 @@ export class KillPanel {
     });
     this.nav.querySelector('.kill-list-btn').addEventListener('click', () => {
       if (this.onList) this.onList();
+    });
+
+    // Close (top-right, same look as the victims list): puts the slide away and shuts the box
+    this.closeBtn = document.createElement('button');
+    this.closeBtn.type = 'button';
+    this.closeBtn.className = 'victim-list-close kill-close';
+    this.closeBtn.setAttribute('aria-label', 'Fechar dossiê');
+    this.closeBtn.innerHTML = CLOSE_ICON;
+    this.nav.after(this.closeBtn);
+    this.closeBtn.addEventListener('click', () => {
+      if (this.onClose) this.onClose();
     });
   }
 
@@ -192,9 +204,10 @@ export class KillPanel {
     const gsap = window.gsap;
     if (this.shown || !this.tl || !gsap) return;
     this.shown = true;
-    gsap.killTweensOf([this.root, this.scrim, this.nav]);
+    gsap.killTweensOf([this.root, this.scrim, this.nav, this.closeBtn]);
     gsap.set(this.root, { autoAlpha: 1 });
     gsap.to(this.scrim, { opacity: 1, duration: 1.2, ease: 'power2.out' });
+    gsap.fromTo(this.closeBtn, { rotate: -90, autoAlpha: 0 }, { rotate: 0, autoAlpha: 1, duration: 0.9, delay: 1.7, ease: 'expo.out' });
     gsap.fromTo(this.nav, { y: 16, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.9, delay: 1.7, ease: 'expo.out' });
     this.tl.timeScale(1).play(0);
   }
@@ -204,8 +217,8 @@ export class KillPanel {
     if (!this.shown || !gsap) return;
     this.shown = false;
     if (this.swapTween) this.swapTween.kill();
-    gsap.killTweensOf([this.root, this.scrim, this.nav]);
-    gsap.to(this.nav, { autoAlpha: 0, duration: 0.3 });
+    gsap.killTweensOf([this.root, this.scrim, this.nav, this.closeBtn]);
+    gsap.to([this.nav, this.closeBtn], { autoAlpha: 0, duration: 0.3 });
     if (this.tl) this.tl.timeScale(2.2).reverse();
     gsap.to(this.scrim, { opacity: 0, duration: 1.0, delay: 0.3, ease: 'power2.inOut' });
     gsap.to(this.root, { autoAlpha: 0, duration: 0.4, delay: 0.7 });

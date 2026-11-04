@@ -286,6 +286,14 @@ class DexterBoxApp {
     return true;
   }
 
+  /** Leave the dossier: the slide goes home, the box shuts and the page scroll comes back. */
+  closeDossier() {
+    if (!this.outroUnlocked) return;
+    this.pendingKill = null;
+    this.outroUnlocked = false;
+    if (this.killPanel) this.killPanel.hide();
+  }
+
   /** Open a victim picked from the list: unlocks the shut box, or jumps from the current dossier. */
   openKill(index) {
     if (!KILLS[index]) return;
@@ -339,6 +347,7 @@ class DexterBoxApp {
       this.killPanel.onNext = () => this.stepKill(1);
       this.killPanel.onPrev = () => this.stepKill(-1);
       this.killPanel.onList = () => this.victimList.open(this.killIndex);
+      this.killPanel.onClose = () => this.closeDossier();
     }
     this.listBtn.addEventListener('click', () => this.victimList.open(-1));
     this.victimList.onSelect = (index) => this.openKill(index);
@@ -627,6 +636,12 @@ class DexterBoxApp {
     });
 
     window.addEventListener('keydown', (e) => {
+      // Esc closes the dossier (the victims list handles its own Esc first)
+      if (e.key === 'Escape' && !e.defaultPrevented && !this.victimList.isOpen && this.outroUnlocked) {
+        e.preventDefault();
+        this.closeDossier();
+        return;
+      }
       if (!this.navLocked || this.victimList.isOpen) return;
       const down = ['ArrowDown', 'PageDown', ' ', 'ArrowRight'];
       const up = ['ArrowUp', 'PageUp', 'ArrowLeft'];

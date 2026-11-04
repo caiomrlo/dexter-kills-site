@@ -999,6 +999,14 @@ html, body {
   transition: border-color 0.3s, background 0.4s, box-shadow 0.4s;
 }
 
+/* Dossier close: same button as the list's, pinned to the viewport */
+.kill-close {
+  position: fixed;
+  z-index: 8;
+  visibility: hidden;
+  opacity: 0;
+}
+
 .victim-list-close svg {
   width: 20px;
   height: 20px;
