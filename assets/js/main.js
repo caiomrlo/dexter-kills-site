@@ -11,6 +11,7 @@ import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 import { KILLS } from './kills.js';
 import { KillPanel } from './kill-panel.js';
 import { VictimList, LIST_ICON } from './victim-list.js';
+import { initBloodCursor } from './blood-cursor.js';
 
 // Camera framing when the box is OPEN (closer framing filling more vertical viewport)
 const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 9.1, center: [0.0, 1.58, -0.20] };
@@ -1296,4 +1297,5 @@ window.addEventListener('DOMContentLoaded', () => {
   const app = new DexterBoxApp();
   window.__dexterApp = app;
   app.start();
+  initBloodCursor();
 });

@@ -1331,3 +1331,48 @@ html, body {
     width: min(80vw, 330px);
   }
 }
+
+/* ------------------------------------------------------------------
+   Blood cursor: a drop that trails the mouse and tints what's behind it red
+   (two layers positioned by assets/js/blood-cursor.js)
+   ------------------------------------------------------------------ */
+.blood-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  will-change: transform;
+}
+
+.blood-cursor--tint.is-visible {
+  opacity: 0.75;
+}
+
+.blood-cursor--shine.is-visible {
+  opacity: 1;
+}
+
+/* Red lens: light content turns blood red, dark stays dark */
+.blood-cursor--tint {
+  mix-blend-mode: multiply;
+  background: radial-gradient(circle, #c8202a, #9a101a 70%, #7a0a12);
+}
+
+/* Faint body and glow so the drop still reads over black */
+.blood-cursor--shine {
+  z-index: 201;
+  background: radial-gradient(circle, rgba(130, 10, 18, 0.14), rgba(110, 6, 12, 0.24) 75%);
+  box-shadow: 0 0 18px rgba(184, 20, 29, 0.16);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .blood-cursor {
+    display: none;
+  }
+}
