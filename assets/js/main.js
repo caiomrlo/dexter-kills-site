@@ -1109,7 +1109,6 @@ class DexterBoxApp {
     gsap.set(bg, { opacity: 0, yPercent: 6, scale: 1.08 });
     gsap.set(headline, {
       opacity: 0,
-      scale: 0.55,
       y: () => innerHeight * 0.32,
       letterSpacing: '0.18em',
       filter: 'blur(18px)'
@@ -1125,10 +1124,10 @@ class DexterBoxApp {
       // The page-wide grey haze would wash out the red background, so it bows out here
       .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
 
-    // Headline: hidden below, then rises out of the dark and grows until it lands at full size
-    gsap.timeline({ scrollTrigger: { ...scroll, start: 'top 40%', invalidateOnRefresh: true } }).to(headline, {
+    // Headline: hidden below at full size, then rises out of the dark into place.
+    // It lands with the camera's final push-in on the box, just after the clasp hint appears (top 10%).
+    gsap.timeline({ scrollTrigger: { ...scroll, start: 'top 40%', end: 'top 5%', invalidateOnRefresh: true } }).to(headline, {
       opacity: 0.86,
-      scale: 1,
       y: 0,
       letterSpacing: '-0.01em',
       filter: 'blur(0px)',
