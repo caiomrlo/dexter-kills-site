@@ -316,6 +316,35 @@ html, body {
   cursor: pointer;
 }
 
+/* Section 6: finale curtain that rises over the box */
+.finale-section {
+  overflow: visible;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 55%, rgba(120, 8, 14, 0.22), transparent 70%),
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(90, 6, 10, 0.35), transparent 75%),
+    #050303;
+}
+
+/* Soft top edge so the curtain fades in over the box instead of a hard line */
+.finale-section::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 40vh;
+  background: linear-gradient(180deg, transparent, rgba(5, 3, 3, 0.75) 60%, #050303);
+  pointer-events: none;
+}
+
+.finale-headline {
+  text-transform: uppercase;
+  font-size: clamp(3.4rem, 11vw, 13rem);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  max-width: 11ch;
+}
+
 /* Section 5: Outro (closed box centered; scroll room only) */
 .outro-section {
   position: relative;

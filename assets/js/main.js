@@ -150,6 +150,7 @@ class DexterBoxApp {
     this.claspHintEl = document.querySelector('.clasp-hint');
     this.killsHeadlineWrap = document.querySelector('.kills-headline-wrap');
     this.killsHeadlineFade = -1;
+    this.finaleProgress = 0; // 0..1 while Section 6 slides up over the box
 
     // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows.
     // The user then steps through KILLS with the button, wheel, touch swipe or arrow keys.
@@ -535,6 +536,19 @@ class DexterBoxApp {
         this._initKillsStage(gsap, outroSection);
       }
 
+      // Section 6 (finale): slides up over the box like a curtain while the scene drifts up behind it
+      const finaleSection = document.getElementById('finale-section');
+      if (finaleSection) {
+        const finaleScroll = { trigger: finaleSection, start: 'top bottom', end: 'top top', scrub: true };
+        ScrollTrigger.create({
+          ...finaleScroll,
+          onUpdate: (self) => {
+            this.finaleProgress = self.progress;
+          }
+        });
+        gsap.to(['#webgpu-canvas', '.kills-stage'], { yPercent: -28, ease: 'none', scrollTrigger: finaleScroll });
+      }
+
       ScrollTrigger.refresh();
     };
 
@@ -766,6 +780,7 @@ class DexterBoxApp {
   }
 
   _handleHover(clientX, clientY) {
+    if (this.finaleProgress > 0.2) return; // box is behind the finale curtain
     const hit = this._raycastScene(clientX, clientY);
     const prevHovered = this.hoveredSlide;
     this.hoveredSlide = hit.slideIndex;
@@ -783,6 +798,7 @@ class DexterBoxApp {
   }
 
   _handleClick(clientX, clientY) {
+    if (this.finaleProgress > 0.2) return;
     const hit = this._raycastScene(clientX, clientY);
 
     // Box shut by the outro scroll: clicking the lid/clasp reopens it
@@ -1214,7 +1230,7 @@ class DexterBoxApp {
     // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
     if (this.claspHintEl) {
       const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);
-      const visible = this.outroUnlocked ? 0 : shut;
+      const visible = this.outroUnlocked ? 0 : shut * Math.max(0, 1 - this.finaleProgress * 3);
       if (visible > 0.01) {
         const m = this.claspMatrix;
         const x = m[12], y = m[13] - 0.05, z = m[14];
@@ -1231,7 +1247,9 @@ class DexterBoxApp {
     // "Ver lista de vítimas" under the shut box: same timing as the clasp cue
     if (this.listBtn) {
       const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);
-      const shown = this.outroUnlocked || this.victimList.isOpen ? 0 : Math.round(shut * 100) / 100;
+      const shown = this.outroUnlocked || this.victimList.isOpen
+        ? 0
+        : Math.round(shut * Math.max(0, 1 - this.finaleProgress * 3) * 100) / 100;
       if (shown !== this.listBtnShown) {
         this.listBtnShown = shown;
         this.listBtn.style.opacity = String(shown);
