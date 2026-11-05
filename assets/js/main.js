@@ -83,9 +83,11 @@ const FLOATING_SLIDE_CONFIGS = [
     spinZ: 0.18,
     phase: 2.35
   },
-  // 4. Top-Center-Left (high near top viewport border, stays well above headline text)
+  // 4. Top-Center-Left (high near top viewport border; always sharp and drawn over the headlines)
   {
     slotIndex: 6,
+    sharp: true,
+    overText: true,
     ndcX: -0.24,
     ndcY: 0.90,
     depth: 9.0,
@@ -245,6 +247,7 @@ class DexterBoxApp {
         focusProgress: 0.0, // eased focusLinear (read by the renderer)
         focusDetached: false,
         depthBlur: 0.0,     // 0 = sharp, 1 = most out of focus (floating slides only)
+        overText: false,    // drawn over the HTML headlines (see renderer _drawOverTextSlides)
         worldPos: [0, 0.34, slotZ],
         modelMatrix: Mat4.create(),
         invModelMatrix: Mat4.create()
@@ -1093,6 +1096,7 @@ class DexterBoxApp {
       if (!s.isFloating) {
         // Stationary slide already inside the Trophy Box
         s.depthBlur = 0.0;
+        s.overText = false;
         s.worldPos[0] = slotPosX;
         s.worldPos[1] = slotPosY;
         s.worldPos[2] = slotPosZ;
@@ -1146,7 +1150,9 @@ class DexterBoxApp {
 
       // Out-of-focus amount: eases off while scrolling down and is gone by the time the slide is over the box
       const lensBlur = Math.min(1.0, Math.abs(1.0 / FLOAT_FOCUS_DEPTH - 1.0 / curDepth) * FLOAT_BLUR_STRENGTH);
-      s.depthBlur = s.focusLinear > 0.0 ? 0.0 : lensBlur * (1.0 - 0.55 * travelSmooth) * rotWeight * rotWeight;
+      s.depthBlur = s.focusLinear > 0.0 || cfg.sharp ? 0.0 : lensBlur * (1.0 - 0.55 * travelSmooth) * rotWeight * rotWeight;
+      // Headlines pass behind it until it starts flying into the box
+      s.overText = !!cfg.overText && rotWeight > 0.01 && s.focusLinear <= 0.0;
 
       const floatPosX = this.camera.pos[0] + camForward[0] * curDepth + camRight[0] * rx + camUp[0] * uy;
       const floatPosY = this.camera.pos[1] + camForward[1] * curDepth + camRight[1] * rx + camUp[1] * uy;

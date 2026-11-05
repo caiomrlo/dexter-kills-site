@@ -269,6 +269,17 @@ html, body {
   touch-action: pan-y;
 }
 
+/* Copy of the floating slide(s) the headlines pass behind (drawn by renderer.js, same size as the canvas) */
+.over-text-slides {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  z-index: 6; /* after #smooth-wrapper in DOM order, so it paints over the headlines */
+  pointer-events: none;
+}
+
 /* Dark atmospheric backdrop: dimmed red smoke photo + vignette (fallback; WebGL pans it with scroll) */
 .dark-backdrop {
   position: fixed;

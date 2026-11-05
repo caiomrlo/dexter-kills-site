@@ -1216,7 +1216,7 @@ export class TrophyBoxRenderer {
    * When it matches the last drawn frame, the frame is skipped and the canvas keeps its image.
    */
   _frameSignature(sceneState, boxVisible) {
-    const sig = this._sig || (this._sig = new Float32Array(32 + 16 * 2 + BOX_SPECS.numSlides * 21));
+    const sig = this._sig || (this._sig = new Float32Array(32 + 16 * 2 + BOX_SPECS.numSlides * 22));
     let k = 0;
     const put = (v) => { sig[k++] = v; };
     const putM = (m) => { for (let i = 0; i < 16; i++) sig[k++] = m[i]; };
@@ -1241,6 +1241,7 @@ export class TrophyBoxRenderer {
       put(s.focusProgress || 0);
       put(s.focusDetached ? 1 : 0);
       put(s.depthBlur || 0);
+      put(s.overText ? 1 : 0);
     }
     return k;
   }
@@ -1260,15 +1261,103 @@ export class TrophyBoxRenderer {
   }
 
   /**
+   * A slide's outline on screen: its 4 face corners in drawing-buffer pixels (y up),
+   * counter-clockwise. Null when part of it is behind the camera.
+   */
+  _projectSlideQuad(group) {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const pts = [];
+    for (const [x, y] of DOF_CORNERS) {
+      _dofCorner.set(x, y, 0).applyMatrix4(group.matrixWorld);
+      _dofView.copy(_dofCorner).applyMatrix4(this.camera.matrixWorldInverse);
+      if (_dofView.z > -0.05) return null;
+      _dofCorner.project(this.camera);
+      pts.push((_dofCorner.x * 0.5 + 0.5) * w, (_dofCorner.y * 0.5 + 0.5) * h);
+    }
+    let area = 0;
+    for (let c = 0; c < 4; c++) {
+      const n = (c + 1) % 4;
+      area += pts[c * 2] * pts[n * 2 + 1] - pts[n * 2] * pts[c * 2 + 1];
+    }
+    if (area < 0) pts.splice(0, 8, pts[6], pts[7], pts[4], pts[5], pts[2], pts[3], pts[0], pts[1]);
+    return pts;
+  }
+
+  /**
+   * Slides flagged overText look like they float in front of the HTML headlines: right after
+   * the frame is drawn, their pixels are copied onto a 2D canvas layered above the text.
+   * The copy is slightly see-through, so a headline passing under it reads as behind the glass.
+   */
+  _drawOverTextSlides(sceneState) {
+    let layer = this.overTextCanvas;
+    if (!layer) {
+      const wrapper = document.getElementById('smooth-wrapper');
+      if (!wrapper) return;
+      layer = this.overTextCanvas = document.createElement('canvas');
+      layer.className = 'over-text-slides';
+      layer.setAttribute('aria-hidden', 'true');
+      wrapper.after(layer);
+      this.overTextCtx = layer.getContext('2d');
+    }
+    const ctx = this.overTextCtx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (layer.width !== w || layer.height !== h) {
+      layer.width = w;
+      layer.height = h;
+      this._overTextDrawn = false;
+    }
+    if (this._overTextDrawn) ctx.clearRect(0, 0, w, h);
+    this._overTextDrawn = false;
+
+    for (let i = 0; i < BOX_SPECS.numSlides; i++) {
+      const s = sceneState.slides[i];
+      const g = this.slideObjects[i].group;
+      if (!s.overText || !g.visible) continue;
+      const pts = this._projectSlideQuad(g);
+      if (!pts) continue;
+      // Grow the outline a touch so the bevel highlight is fully covered (canvas y runs down)
+      let cx = 0;
+      let cy = 0;
+      for (let c = 0; c < 4; c++) { cx += pts[c * 2] / 4; cy += pts[c * 2 + 1] / 4; }
+      const grow = 1.5 * Math.max(1, h / 900);
+      ctx.save();
+      ctx.beginPath();
+      let minX = w, minY = h, maxX = 0, maxY = 0;
+      for (let c = 0; c < 4; c++) {
+        const dx = pts[c * 2] - cx;
+        const dy = pts[c * 2 + 1] - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        const px = pts[c * 2] + (dx / len) * grow;
+        const py = h - (pts[c * 2 + 1] + (dy / len) * grow);
+        if (c === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+      }
+      ctx.closePath();
+      ctx.clip();
+      const x0 = Math.max(0, Math.floor(minX));
+      const y0 = Math.max(0, Math.floor(minY));
+      const x1 = Math.min(w, Math.ceil(maxX));
+      const y1 = Math.min(h, Math.ceil(maxY));
+      if (x1 > x0 && y1 > y0) {
+        ctx.globalAlpha = 0.82;
+        ctx.drawImage(this.canvas, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+        this._overTextDrawn = true;
+      }
+      ctx.restore();
+    }
+  }
+
+  /**
    * Feeds the floating-slide depth of field: each blurred slide's outline on screen
    * (its 4 projected corners) and blur amount, ordered far -> near.
    */
   _updateSlideDof(sceneState) {
     const pass = this.slideDofPass;
     if (!pass) return;
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const scale = h / 900;
+    const scale = this.canvas.height / 900;
     // How far the softest blur spills past the slide outline
     const softestPx = 31 * scale;
 
@@ -1279,23 +1368,8 @@ export class TrophyBoxRenderer {
       const amt = s.depthBlur || 0;
       const g = this.slideObjects[i].group;
       if (amt < 0.01 || !g.visible) continue;
-      const pts = [];
-      let behind = false;
-      for (const [x, y] of DOF_CORNERS) {
-        _dofCorner.set(x, y, 0).applyMatrix4(g.matrixWorld);
-        _dofView.copy(_dofCorner).applyMatrix4(this.camera.matrixWorldInverse);
-        if (_dofView.z > -0.05) behind = true;
-        _dofCorner.project(this.camera);
-        pts.push((_dofCorner.x * 0.5 + 0.5) * w, (_dofCorner.y * 0.5 + 0.5) * h);
-      }
-      if (behind) continue;
-      // The shader expects counter-clockwise corners
-      let area = 0;
-      for (let c = 0; c < 4; c++) {
-        const n = (c + 1) % 4;
-        area += pts[c * 2] * pts[n * 2 + 1] - pts[n * 2] * pts[c * 2 + 1];
-      }
-      if (area < 0) pts.splice(0, 8, pts[6], pts[7], pts[4], pts[5], pts[2], pts[3], pts[0], pts[1]);
+      const pts = this._projectSlideQuad(g);
+      if (!pts) continue;
       const dx = s.worldPos[0] - sceneState.cameraPos[0];
       const dy = s.worldPos[1] - sceneState.cameraPos[1];
       const dz = s.worldPos[2] - sceneState.cameraPos[2];
@@ -1540,6 +1614,9 @@ export class TrophyBoxRenderer {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+
+    // Must run right after drawing, while the WebGL canvas still holds this frame
+    this._drawOverTextSlides(sceneState);
   }
 }
 
