@@ -58,6 +58,7 @@ const FLOATING_SLIDE_CONFIGS = [
   // 2. Mid-Left (further in background, near outer left border, clear of center text)
   {
     slotIndex: 2,
+    lensBlur: 0.45, // softer than its depth alone would give
     ndcX: -0.92,
     ndcY: 0.14,
     depth: 10.2,
@@ -102,6 +103,7 @@ const FLOATING_SLIDE_CONFIGS = [
   // 5. Top-Right (framing upper-right corner, blood specimen visible)
   {
     slotIndex: 8,
+    lensBlur: 0.3, // slightly soft (its depth alone would keep it sharp)
     ndcX: 0.86,
     ndcY: 0.80,
     depth: 6.2,
@@ -116,6 +118,7 @@ const FLOATING_SLIDE_CONFIGS = [
   // 6. Mid-Right (hero foreground slide on far right edge, creeps inward without touching text)
   {
     slotIndex: 10,
+    sharp: true,
     ndcX: 0.85,
     ndcY: -0.22,
     depth: 4.85,
@@ -1149,7 +1152,7 @@ class DexterBoxApp {
       const uy = curNdcY * halfH;
 
       // Out-of-focus amount: eases off while scrolling down and is gone by the time the slide is over the box
-      const lensBlur = Math.min(1.0, Math.abs(1.0 / FLOAT_FOCUS_DEPTH - 1.0 / curDepth) * FLOAT_BLUR_STRENGTH);
+      const lensBlur = cfg.lensBlur ?? Math.min(1.0, Math.abs(1.0 / FLOAT_FOCUS_DEPTH - 1.0 / curDepth) * FLOAT_BLUR_STRENGTH);
       s.depthBlur = s.focusLinear > 0.0 || cfg.sharp ? 0.0 : lensBlur * (1.0 - 0.55 * travelSmooth) * rotWeight * rotWeight;
       // Headlines pass behind it until it starts flying into the box
       s.overText = !!cfg.overText && rotWeight > 0.01 && s.focusLinear <= 0.0;
