@@ -430,10 +430,54 @@ html, body {
   color: var(--text-muted);
 }
 
-/* Section 7: finale call, same solid dark */
+/* Section 7: the page footer — final call + credits, same solid dark */
 .finale-section {
   overflow: visible;
   background: var(--after-box-bg);
+}
+
+.footer-credits {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 22px clamp(16px, 4vw, 48px) calc(22px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(232, 225, 214, 0.08);
+  font-family: 'Barlow Condensed', var(--font-sans);
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.footer-drop {
+  width: 7px;
+  height: 7px;
+  background: var(--accent-blood);
+  border-radius: 0 50% 50% 50%;
+  transform: rotate(45deg);
+}
+
+.footer-author {
+  pointer-events: auto; /* the smooth-scroll wrapper ignores the pointer */
+  color: var(--text-warm-ivory);
+  text-decoration: none;
+  background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+  padding-bottom: 2px;
+  transition: color 0.25s ease, background-size 0.35s ease;
+}
+
+.footer-author:hover,
+.footer-author:focus-visible {
+  color: var(--accent-blood-bright);
+  background-size: 100% 1px;
+  outline: none;
 }
 
 /* Giant "VÍTIMA" sunk in the dark behind the headline: faint fill, fades out towards the bottom */
