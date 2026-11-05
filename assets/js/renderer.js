@@ -573,19 +573,24 @@ export class TrophyBoxRenderer {
           vec3 gRimCol = mix(vec3(0.80, 0.96, 0.90), vec3(1.0, 0.28, 0.24), gRedSide * (0.45 + 0.5 * uFocus));
           gRimCol = mix(gRimCol, vec3(0.95, 0.96, 1.0), (1.0 - gRedSide) * uFocus * 0.6);
 
-          vec3 gCol = gSpec * 0.85;
-          gCol += gRimCol * gRim * (0.95 + gSpecLum * 2.5 + gFres) * (0.6 + 0.4 * uPresence);
+          // Free-floating slides (Sections 1-3) read lighter: clearer body, softer bevel
+          float gClear = uPresence * (1.0 - uFocus);
+
+          vec3 gCol = gSpec * 0.85 * (1.0 - 0.35 * gClear);
+          gCol += gRimCol * gRim * (0.95 + gSpecLum * 2.5 + gFres) * (0.6 + 0.4 * uPresence) * (1.0 - 0.25 * gClear);
           gCol += gRimCol * gRimGlow * 0.06;
-          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence) * (1.0 - 0.8 * uFocus); // faint glass body haze
-          gCol += vec3(0.85, 0.92, 0.95) * gStreak * (0.06 + gSpecLum * 0.6) * (0.5 + 0.5 * uPresence);
-          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4) * (1.0 - 0.45 * uFocus);
+          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence) * (1.0 - 0.8 * uFocus) * (1.0 - 0.5 * gClear); // faint glass body haze
+          gCol += vec3(0.85, 0.92, 0.95) * gStreak * (0.06 + gSpecLum * 0.6) * (0.5 + 0.5 * uPresence) * (1.0 - 0.35 * gClear);
+          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4) * (1.0 - 0.45 * uFocus) * (1.0 - 0.4 * gClear);
           gCol += vec3(0.55, 0.02, 0.03) * gBloodHalo * (0.07 + 0.12 * uFocus);
           gCol += vec3(1.0, 0.1, 0.12) * gRimGlow * gRedSide * 0.35 * uFocus; // red light bleeding in at one end
           gCol += vec3(1.0, 0.86, 0.52) * uActive * (0.05 + gRim * 0.9 + gRimGlow * 0.12);
 
           // Alpha = how much the glass dims what is behind it (mostly clear)
           float gA = 0.03 + 0.05 * uPresence + gFres * 0.30 + gRim * 0.40 + gSpecLum * 0.25 + gScratch * 0.04;
+          gA *= 1.0 - 0.45 * gClear * (1.0 - 0.4 * gRim); // body clears more than the bevel
           gCol *= 1.0 - 0.35 * uFocus * (1.0 - gRim);
+          gCol *= 1.0 - 0.45 * gClear * (1.0 - gRim); // floating: clearer body (the bevel is dimmed above)
           gl_FragColor = vec4(gCol, clamp(gA, 0.0, 0.92));
           `
         );
@@ -1237,7 +1242,7 @@ export class TrophyBoxRenderer {
         0.36 + activeAmt * 0.20,
         0.31 - activeAmt * 0.10
       );
-      slideObj.edgeMat.opacity = 0.55 + isHighFloating * 0.25 + activeAmt * 0.20;
+      slideObj.edgeMat.opacity = 0.55 + isHighFloating * 0.12 + activeAmt * 0.20;
       if (isFocus > 0.0) {
         // Focused slide: edges glow blood red, like the bevel is catching a red lamp
         const c = slideObj.edgeMat.color, e = slideObj.edgeMat.emissive;
