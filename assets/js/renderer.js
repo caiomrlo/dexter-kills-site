@@ -14,7 +14,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { HorizontalBlurShader } from 'three/addons/shaders/HorizontalBlurShader.js';
 import { VerticalBlurShader } from 'three/addons/shaders/VerticalBlurShader.js';
@@ -36,6 +35,8 @@ import {
   createBloodSpecimenVariants,
   createGlassSlideSurfaceMaps
 } from './textures.js';
+
+import { QUALITY } from './quality.js';
 
 // Objects on this layer skip the (blurred) main pass and are drawn sharp on top
 const FOCUS_LAYER = 1;
@@ -127,69 +128,69 @@ class HalfResBlurPass extends Pass {
 }
 
 /**
- * The page's dark atmosphere (charcoal haze, red corner glows, film grain, vignette), drawn as the
- * last pass instead of a full-screen CSS layer with mix-blend-mode: screen over the canvas.
- * Mirrors the old .dark-backdrop CSS: same gradients, then screen-blended over the frame.
- * Works in display (sRGB) space, after OutputPass, like the browser did.
+ * The page's dark atmosphere (charcoal haze, red corner glows, film grain, vignette).
+ * Mirrors the old .dark-backdrop CSS layer (same gradients, screen-blended over the frame),
+ * but runs inside the OutputPass right after tone mapping + sRGB, so it costs no extra
+ * full-screen pass. Works in display (sRGB) space, like the browser did.
  */
-const BackdropShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uOpacity: { value: 1.0 },
-    uResolution: { value: new THREE.Vector2(1, 1) }, // CSS pixels
+const BACKDROP_GLSL = /* glsl */ `
+  uniform float uBackdrop;
+  uniform vec2 uResolution;  // CSS pixels
+  uniform float uPixelRatio;
+
+  // CSS radial-gradient(ellipse rx ry at c, rgba(col, a), transparent 70%) composited over dst
+  vec3 bdGlow(vec3 dst, vec2 p, vec2 c, vec2 r, vec3 col, float a) {
+    float d = length((p - c) / r);
+    float alpha = a * (1.0 - clamp(d / 0.7, 0.0, 1.0));
+    return mix(dst, col, alpha);
+  }
+
+  float bdHash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  vec4 applyBackdrop(vec4 frame, vec2 uv) {
+    vec2 res = uResolution;
+    vec2 p = vec2(uv.x, 1.0 - uv.y) * res; // CSS pixels, y down
+
+    vec3 s = vec3(6.0, 5.0, 5.0) / 255.0;
+    s = bdGlow(s, p, vec2(res.x, 0.0), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.12);
+    s = bdGlow(s, p, vec2(0.0, res.y), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.16);
+    s = bdGlow(s, p, res * vec2(0.5, 0.48), res * vec2(0.55, 0.45), vec3(70.0, 66.0, 66.0) / 255.0, 0.20);
+
+    // Film grain: white noise at 9% (like the old SVG feTurbulence tile, mean 0.5)
+    float n = 0.5 + (bdHash(floor(gl_FragCoord.xy / uPixelRatio)) - 0.5) * 0.4;
+    s = mix(s, vec3(1.0), 0.09 * n);
+
+    // Vignette: farthest-corner ellipse, transparent 40% -> black 0.9 at 100%, multiply
+    float dv = length((p - res * 0.5) / (res * 0.5)) / 1.41421356;
+    s *= 1.0 - 0.9 * clamp((dv - 0.4) / 0.6, 0.0, 1.0);
+
+    // screen(frame over the black page, backdrop)
+    vec3 scr = 1.0 - (1.0 - frame.rgb) * (1.0 - s);
+    return mix(frame, vec4(scr, 1.0), uBackdrop);
+  }
+`;
+
+/** Adds the backdrop to an OutputPass (runs after its tone mapping and sRGB conversion). */
+function addBackdropToOutput(outputPass) {
+  Object.assign(outputPass.uniforms, {
+    uBackdrop: { value: 1.0 },
+    uResolution: { value: new THREE.Vector2(1, 1) },
     uPixelRatio: { value: 1.0 }
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float uOpacity;
-    uniform vec2 uResolution;
-    uniform float uPixelRatio;
-    varying vec2 vUv;
-
-    // CSS radial-gradient(ellipse rx ry at c, rgba(col, a), transparent 70%) composited over dst
-    vec3 glow(vec3 dst, vec2 p, vec2 c, vec2 r, vec3 col, float a) {
-      float d = length((p - c) / r);
-      float alpha = a * (1.0 - clamp(d / 0.7, 0.0, 1.0));
-      return mix(dst, col, alpha);
-    }
-
-    float hash(vec2 p) {
-      p = fract(p * vec2(123.34, 456.21));
-      p += dot(p, p + 45.32);
-      return fract(p.x * p.y);
-    }
-
-    void main() {
-      vec4 frame = texture2D(tDiffuse, vUv);
-      vec2 res = uResolution;
-      vec2 p = vec2(vUv.x, 1.0 - vUv.y) * res; // CSS pixels, y down
-
-      vec3 s = vec3(6.0, 5.0, 5.0) / 255.0;
-      s = glow(s, p, vec2(res.x, 0.0), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.12);
-      s = glow(s, p, vec2(0.0, res.y), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.16);
-      s = glow(s, p, res * vec2(0.5, 0.48), res * vec2(0.55, 0.45), vec3(70.0, 66.0, 66.0) / 255.0, 0.20);
-
-      // Film grain: white noise at 9% (like the old SVG feTurbulence tile, mean 0.5)
-      float n = 0.5 + (hash(floor(gl_FragCoord.xy / uPixelRatio)) - 0.5) * 0.4;
-      s = mix(s, vec3(1.0), 0.09 * n);
-
-      // Vignette: farthest-corner ellipse, transparent 40% -> black 0.9 at 100%, multiply
-      float dv = length((p - res * 0.5) / (res * 0.5)) / 1.41421356;
-      s *= 1.0 - 0.9 * clamp((dv - 0.4) / 0.6, 0.0, 1.0);
-
-      // screen(frame over the black page, backdrop)
-      vec3 scr = 1.0 - (1.0 - frame.rgb) * (1.0 - s);
-      gl_FragColor = mix(frame, vec4(scr, 1.0), uOpacity);
-    }
-  `
-};
+  });
+  const fs = outputPass.material.fragmentShader;
+  const mainAt = fs.indexOf('void main()');
+  const endAt = fs.lastIndexOf('}');
+  outputPass.material.fragmentShader =
+    fs.slice(0, mainAt) +
+    BACKDROP_GLSL +
+    fs.slice(mainAt, endAt) +
+    '  if (uBackdrop > 0.001) gl_FragColor = applyBackdrop(gl_FragColor, vUv);\n}\n';
+  outputPass.material.needsUpdate = true;
+}
 
 export class TrophyBoxRenderer {
   constructor(canvas) {
@@ -211,6 +212,7 @@ export class TrophyBoxRenderer {
     this.keyPoint = null;
     this.rimPoint = null;
     this._forceRender = true; // draw the next frame even if nothing moved
+    this.maxPixelRatio = QUALITY.maxPixelRatio; // lowered at runtime by the adaptive quality in main.js
   }
 
   async init() {
@@ -354,7 +356,15 @@ export class TrophyBoxRenderer {
     this.glassSurfaceMaps = createGlassSlideSurfaceMaps(maxAniso);
 
     // 1. Honduras Mahogany / Rosewood with Warm Satin-Lacquer Finish
-    this.woodMat = new THREE.MeshPhysicalMaterial({
+    const Lacquered = QUALITY.physicalMaterials ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const physicalOnly = (params) => {
+      if (QUALITY.physicalMaterials) return params;
+      const out = { ...params };
+      for (const k of ['clearcoat', 'clearcoatRoughness', 'clearcoatNormalMap', 'clearcoatNormalScale', 'ior', 'reflectivity']) delete out[k];
+      return out;
+    };
+
+    this.woodMat = new Lacquered(physicalOnly({
       map: woodMaps.map,
       normalMap: woodMaps.normalMap,
       normalScale: new THREE.Vector2(0.24, 0.24),
@@ -368,10 +378,10 @@ export class TrophyBoxRenderer {
       ior: 1.48,
       reflectivity: 0.65,
       envMapIntensity: 1.10
-    });
+    }));
 
     // 2. Brushed Antique Brass Hardware
-    this.brassMat = new THREE.MeshPhysicalMaterial({
+    this.brassMat = new Lacquered(physicalOnly({
       map: brassMaps.map,
       normalMap: brassMaps.normalMap,
       normalScale: new THREE.Vector2(0.18, 0.18),
@@ -381,7 +391,7 @@ export class TrophyBoxRenderer {
       clearcoat: 0.32,
       clearcoatRoughness: 0.16,
       envMapIntensity: 1.50
-    });
+    }));
 
     // Dark recessed screw slot material
     this.darkBrassSlotMat = new THREE.MeshStandardMaterial({
@@ -903,8 +913,8 @@ export class TrophyBoxRenderer {
     this.keyLight = new THREE.DirectionalLight(0xfff5e8, 2.3);
     this.keyLight.position.set(-1.8, 6.5, 4.2);
     this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.width = 2048;
-    this.keyLight.shadow.mapSize.height = 2048;
+    this.keyLight.shadow.mapSize.width = QUALITY.shadowMapSize;
+    this.keyLight.shadow.mapSize.height = QUALITY.shadowMapSize;
     this.keyLight.shadow.camera.near = 1.0;
     this.keyLight.shadow.camera.far = 14.0;
     const d = 2.4;
@@ -959,7 +969,7 @@ export class TrophyBoxRenderer {
     const renderTarget = new THREE.WebGLRenderTarget(width, height, {
       type: THREE.HalfFloatType,
       format: THREE.RGBAFormat,
-      samples: 4
+      samples: QUALITY.msaa
     });
 
     this.composer = new EffectComposer(this.renderer, renderTarget);
@@ -978,33 +988,38 @@ export class TrophyBoxRenderer {
     this.focusPass.enabled = false;
     this.composer.addPass(this.focusPass);
 
-    // Subtle HDR Specular Bloom
-    this.bloomPass = new UnrealBloomPass(
+    // Subtle HDR Specular Bloom (barely visible at this strength; skipped on the low tier)
+    if (QUALITY.bloom) this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(width, height),
       0.06, // subtle optical halation strength
       0.28, // radius
       1.45  // strict HDR threshold so wood/paper never bloom
     );
-    this.composer.addPass(this.bloomPass);
+    if (this.bloomPass) this.composer.addPass(this.bloomPass);
 
-    const outputPass = new OutputPass();
-    this.composer.addPass(outputPass);
+    this.outputPass = new OutputPass();
+    addBackdropToOutput(this.outputPass);
+    this.composer.addPass(this.outputPass);
+  }
 
-    this.backdropPass = new ShaderPass(BackdropShader);
-    this.composer.addPass(this.backdropPass);
+  /** Caps the drawing-buffer pixel ratio (adaptive quality); resizes right away. */
+  setMaxPixelRatio(value) {
+    if (Math.abs(value - this.maxPixelRatio) < 1e-3) return;
+    this.maxPixelRatio = value;
+    this.resize();
   }
 
   resize() {
     if (!this.renderer) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
     const clientW = Math.max(1, this.canvas.clientWidth);
     const clientH = Math.max(1, this.canvas.clientHeight);
     const width = Math.max(1, Math.floor(clientW * dpr));
     const height = Math.max(1, Math.floor(clientH * dpr));
 
-    if (this.backdropPass) {
-      this.backdropPass.uniforms.uResolution.value.set(clientW, clientH);
-      this.backdropPass.uniforms.uPixelRatio.value = dpr;
+    if (this.outputPass) {
+      this.outputPass.uniforms.uResolution.value.set(clientW, clientH);
+      this.outputPass.uniforms.uPixelRatio.value = dpr;
     }
 
     if (this.canvas.width === width && this.canvas.height === height) {
@@ -1278,10 +1293,8 @@ export class TrophyBoxRenderer {
     }
 
     // 6. Page atmosphere (fades out on the closed-box stage)
-    if (this.backdropPass) {
-      const op = Math.max(0, Math.min(1, sceneState.backdropOpacity ?? 1));
-      this.backdropPass.uniforms.uOpacity.value = op;
-      this.backdropPass.enabled = op > 0.001;
+    if (this.outputPass) {
+      this.outputPass.uniforms.uBackdrop.value = Math.max(0, Math.min(1, sceneState.backdropOpacity ?? 1));
     }
 
     // 7. Render with Integrated Post-Processing

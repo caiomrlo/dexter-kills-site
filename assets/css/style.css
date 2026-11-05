@@ -1410,3 +1410,50 @@ html, body {
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------
+   Hidden looping animations: paused while their element is faded out,
+   so they don't keep the compositor busy (classes set in main.js)
+   ------------------------------------------------------------------ */
+.scroll-indicator.is-paused .scroll-line,
+.clasp-hint:not(.is-active) .clasp-ring,
+.clasp-hint:not(.is-active) .clasp-dot {
+  animation-play-state: paused;
+}
+
+/* ------------------------------------------------------------------
+   Low quality tier (phones, set by assets/js/quality.js):
+   no backdrop blur over the live 3D canvas (it re-blurs every frame),
+   no giant drop shadows or blend modes on the "Dexter Kills" title.
+   Backgrounds get a bit more opaque to make up for the missing blur.
+   ------------------------------------------------------------------ */
+.quality-low .kill-episode,
+.quality-low .kill-prev,
+.quality-low .kill-list-btn,
+.quality-low .victim-list-trigger,
+.quality-low .victim-list-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.quality-low .kill-episode {
+  background: linear-gradient(180deg, rgba(30, 22, 22, 0.82), rgba(12, 9, 9, 0.82));
+}
+
+.quality-low .kill-prev,
+.quality-low .kill-list-btn {
+  background: rgba(12, 9, 9, 0.75);
+}
+
+.quality-low .victim-list-trigger {
+  background: rgba(10, 6, 6, 0.8);
+}
+
+.quality-low .kills-word--light,
+.quality-low .kills-word--red {
+  filter: none;
+}
+
+.quality-low .kills-headline-wrap {
+  mix-blend-mode: normal;
+}

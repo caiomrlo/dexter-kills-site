@@ -12,6 +12,13 @@ import { KILLS } from './kills.js';
 import { KillPanel } from './kill-panel.js';
 import { VictimList, LIST_ICON } from './victim-list.js';
 import { initBloodCursor } from './blood-cursor.js';
+import { QUALITY } from './quality.js';
+
+// Adaptive quality (low tier): if frames keep coming slower than this, drop the resolution a step
+const ADAPT_WINDOW_MS = 2000;
+const ADAPT_SLOW_FRAME_MS = 1000 / 45;
+const ADAPT_STEP = 0.25;
+const ADAPT_GRACE_MS = 3000;
 
 // Camera framing when the box is OPEN (closer framing filling more vertical viewport)
 const OPEN_VIEW = { yaw: 0.0, pitch: 0.42, distance: 9.1, center: [0.0, 1.58, -0.20] };
@@ -254,6 +261,8 @@ class DexterBoxApp {
     this.dragDistance = 0;
 
     this.lastFrameTime = performance.now();
+    this.perf = { sum: 0, frames: 0 };
+    this.claspHintActive = false;
   }
 
   get focusSlotIndex() {
@@ -405,7 +414,7 @@ class DexterBoxApp {
       content: '#smooth-content',
       smooth: 2.2,
       effects: true,
-      smoothTouch: 0.15,
+      smoothTouch: QUALITY.smoothTouch,
       ignoreMobileResize: true
     });
 
@@ -469,7 +478,10 @@ class DexterBoxApp {
                 trigger: section,
                 start: 'top top',
                 end: '40% top',
-                scrub: true
+                scrub: true,
+                // Faded out: pause its endless pulse so it stops ticking the compositor
+                onLeave: () => indicator.classList.add('is-paused'),
+                onEnterBack: () => indicator.classList.remove('is-paused')
               }
             });
           }
@@ -703,6 +715,7 @@ class DexterBoxApp {
   _startRenderLoop() {
     if (this.rafId !== null || !this.renderer.device) return;
     this.lastFrameTime = performance.now();
+    this.loopStartTime = this.lastFrameTime;
     this.rafId = requestAnimationFrame((t) => this._loop(t));
   }
 
@@ -1217,7 +1230,7 @@ class DexterBoxApp {
       opacity: 0,
       y: () => innerHeight * 0.32,
       scaleX: 1.45,
-      filter: 'blur(18px)'
+      ...(QUALITY.headlineBlur ? { filter: 'blur(18px)' } : {})
     });
 
     const scroll = { trigger: outroSection, start: 'top 90%', end: 'bottom bottom', scrub: 1.4 };
@@ -1237,7 +1250,7 @@ class DexterBoxApp {
       opacity: 0.86,
       y: 0,
       scaleX: 1,
-      filter: 'blur(0px)',
+      ...(QUALITY.headlineBlur ? { filter: 'blur(0px)' } : {}),
       ease: 'power2.out',
       duration: 1
     });
@@ -1268,6 +1281,11 @@ class DexterBoxApp {
           `translate(${((nx * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((0.5 - ny * 0.5) * innerHeight).toFixed(1)}px)`;
       }
       this.claspHintEl.style.opacity = String(visible);
+      const active = visible > 0.01;
+      if (active !== this.claspHintActive) {
+        this.claspHintActive = active;
+        this.claspHintEl.classList.toggle('is-active', active);
+      }
     }
 
     // "Ver lista de vítimas" under the shut box: same timing as the clasp cue
@@ -1285,7 +1303,30 @@ class DexterBoxApp {
     }
   }
 
+  /**
+   * Low tier only: if the frame rate stays under ~45 fps, lower the resolution a step
+   * (never back up, to avoid flicking between sizes). Very long gaps are ignored:
+   * they come from a hidden tab or a throttled page, not from rendering cost.
+   */
+  _adaptQuality(frameMs) {
+    if (!QUALITY.adaptive || frameMs > 100) return;
+    const perf = this.perf;
+    // The first seconds stutter from loading (textures, fonts, GSAP setup), not from rendering
+    if (performance.now() - this.loopStartTime < ADAPT_GRACE_MS) return;
+    perf.sum += frameMs;
+    perf.frames++;
+    if (perf.sum < ADAPT_WINDOW_MS) return;
+    const avg = perf.sum / perf.frames;
+    perf.sum = 0;
+    perf.frames = 0;
+    const r = this.renderer;
+    if (avg > ADAPT_SLOW_FRAME_MS && r.maxPixelRatio > QUALITY.minPixelRatio) {
+      r.setMaxPixelRatio(Math.max(QUALITY.minPixelRatio, r.maxPixelRatio - ADAPT_STEP));
+    }
+  }
+
   _loop(now) {
+    this._adaptQuality(now - this.lastFrameTime);
     const dt = Math.min(0.05, (now - this.lastFrameTime) * 0.001);
     this.lastFrameTime = now;
     const timeSec = now * 0.001;
