@@ -134,6 +134,8 @@ const FLOATING_SLIDE_CONFIGS = [
   }
 ];
 
+const smoothstep01 = (t) => t * t * (3.0 - 2.0 * t);
+
 class DexterBoxApp {
   constructor() {
     this.canvas = document.getElementById('webgpu-canvas');
@@ -152,6 +154,13 @@ class DexterBoxApp {
     this.killsHeadlineWrap = document.querySelector('.kills-headline-wrap');
     this.killsHeadlineFade = -1;
     this.finaleProgress = 0; // 0..1 while Section 6 slides up over the box
+    // Page atmosphere strength (drawn by the renderer's last pass; fades out on the closed-box stage)
+    this.backdropFx = { opacity: 1 };
+    // Camera basis reused every frame (world space)
+    this.camForward = [0, 0, -1];
+    this.camRight = [1, 0, 0];
+    this.camUp = [0, 1, 0];
+    this.focusPos = [0, 0, 0];
 
     // Kill reveal (after the clasp opens the box): one slide flies to the camera, dossier shows.
     // The user then steps through KILLS with the button, wheel, touch swipe or arrow keys.
@@ -252,7 +261,8 @@ class DexterBoxApp {
   }
 
   get anySlideOut() {
-    return this.slides.some((s) => s.focusLinear > 0.001);
+    for (const s of this.slides) if (s.focusLinear > 0.001) return true;
+    return false;
   }
 
   // Interaction with the box is paused while a kill dossier is open
@@ -364,6 +374,8 @@ class DexterBoxApp {
 
     try {
       await this.renderer.init();
+      // The renderer now draws the dark atmosphere itself; the CSS layer is the fallback only
+      document.body.classList.add('webgl-backdrop');
       this._bindEvents();
       this._updateUI();
       this._startRenderLoop();
@@ -883,7 +895,8 @@ class DexterBoxApp {
     const camRevealRaw = Math.min(1.0, Math.max(0.0, (rp - 0.15) / 0.85));
     const camReveal = camRevealRaw * camRevealRaw * (3.0 - 2.0 * camRevealRaw);
     // Blur arms once a slide is clear of the box and stays on through victim swaps
-    const anyDetached = this.slides.some((s) => s.focusDetached);
+    let anyDetached = false;
+    for (const s of this.slides) if (s.focusDetached) anyDetached = true;
     if (anyDetached) this.blurArmed = true;
     else if (!this.outroUnlocked) this.blurArmed = false;
     this.revealBlur = this.blurArmed ? camReveal : 0.0;
@@ -943,11 +956,14 @@ class DexterBoxApp {
 
     // Camera basis vectors in world space for positioning the 7 floating slides in camera frustum space
     // Forward vector from camera.pos toward camera.target:
-    const camForward = [-cosP * sinY, -sinP, -cosP * cosY];
+    const camForward = this.camForward;
+    camForward[0] = -cosP * sinY; camForward[1] = -sinP; camForward[2] = -cosP * cosY;
     // Right vector:
-    const camRight = [cosY, 0.0, -sinY];
+    const camRight = this.camRight;
+    camRight[0] = cosY; camRight[1] = 0.0; camRight[2] = -sinY;
     // Up vector = Right x Forward:
-    const camUp = [-sinP * sinY, cosP, -sinP * cosY];
+    const camUp = this.camUp;
+    camUp[0] = -sinP * sinY; camUp[1] = cosP; camUp[2] = -sinP * cosY;
     const tanHalfFov = Math.tan(fovy * 0.5);
 
     // 2. Box Open/Close Two-Stage Animation Timeline
@@ -1120,7 +1136,8 @@ class DexterBoxApp {
    */
   _updateFocusSlides(dt, timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
     const active = this.outroUnlocked && this.revealProgress > 0.0 ? this.focusSlotIndex : -1;
-    const othersOut = this.slides.some((s) => s.index !== active && s.focusLinear > 0.55);
+    let othersOut = false;
+    for (const s of this.slides) if (s.index !== active && s.focusLinear > 0.55) othersOut = true;
     const firstReveal = this.revealProgress < 1.0;
 
     for (const s of this.slides) {
@@ -1147,8 +1164,7 @@ class DexterBoxApp {
   _applyFocusSlide(s, timeSec, aspect, tanHalfFov, camForward, camRight, camUp) {
     const rp = s.focusLinear;
 
-    const smooth = (t) => t * t * (3.0 - 2.0 * t);
-    const liftT = smooth(Math.min(1.0, rp / 0.3));
+    const liftT = smoothstep01(Math.min(1.0, rp / 0.3));
     const flyRaw = Math.min(1.0, Math.max(0.0, (rp - 0.22) / 0.78));
     // easeInOutCubic for a weighty, cinematic glide
     const flyT = flyRaw < 0.5 ? 4.0 * flyRaw * flyRaw * flyRaw : 1.0 - Math.pow(-2.0 * flyRaw + 2.0, 3.0) / 2.0;
@@ -1163,11 +1179,10 @@ class DexterBoxApp {
     const rx = ndcX * halfH * aspect;
     const uy = ndcY * halfH;
     const cp = this.camera.pos;
-    const focusPos = [
-      cp[0] + camForward[0] * depth + camRight[0] * rx + camUp[0] * uy,
-      cp[1] + camForward[1] * depth + camRight[1] * rx + camUp[1] * uy,
-      cp[2] + camForward[2] * depth + camRight[2] * rx + camUp[2] * uy
-    ];
+    const focusPos = this.focusPos;
+    focusPos[0] = cp[0] + camForward[0] * depth + camRight[0] * rx + camUp[0] * uy;
+    focusPos[1] = cp[1] + camForward[1] * depth + camRight[1] * rx + camUp[1] * uy;
+    focusPos[2] = cp[2] + camForward[2] * depth + camRight[2] * rx + camUp[2] * uy;
 
     // Phase 1: lift out of the rack; Phase 2: fly to the focus pose (with a slight arc)
     const fromY = 0.34 + 1.15 * liftT;
@@ -1196,10 +1211,12 @@ class DexterBoxApp {
     if (!bg || !headline) return;
 
     gsap.set(bg, { opacity: 0, yPercent: 6, scale: 1.08 });
+    // Starts stretched wide instead of wide letter-spacing: animating letter-spacing re-lays out
+    // and repaints the giant gradient text every frame, scaleX stays on the compositor
     gsap.set(headline, {
       opacity: 0,
       y: () => innerHeight * 0.32,
-      letterSpacing: '0.18em',
+      scaleX: 1.45,
       filter: 'blur(18px)'
     });
 
@@ -1211,14 +1228,15 @@ class DexterBoxApp {
       .to(bg, { yPercent: -6, scale: 1.0, duration: 1 }, 0)
       .to(bg, { opacity: 1, duration: 0.35, ease: 'power1.inOut' }, 0)
       // The page-wide grey haze would wash out the red background, so it bows out here
-      .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
+      .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0)
+      .to(this.backdropFx, { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
 
     // Headline: hidden below at full size, then rises out of the dark into place.
     // It lands with the camera's final push-in on the box, just after the clasp hint appears (top 10%).
     gsap.timeline({ scrollTrigger: { ...scroll, start: 'top 40%', end: 'top 5%', invalidateOnRefresh: true } }).to(headline, {
       opacity: 0.86,
       y: 0,
-      letterSpacing: '-0.01em',
+      scaleX: 1,
       filter: 'blur(0px)',
       ease: 'power2.out',
       duration: 1
@@ -1293,7 +1311,8 @@ class DexterBoxApp {
       claspMatrix: this.claspMatrix,
       slides: this.slides,
       boxVisible,
-      backgroundBlur: this.revealBlur
+      backgroundBlur: this.revealBlur,
+      backdropOpacity: this.backdropFx.opacity
     });
 
     this.rafId = requestAnimationFrame((t) => this._loop(t));

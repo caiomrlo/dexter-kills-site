@@ -7,6 +7,52 @@
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/**
+ * Bakes every plain Mesh inside a group into one mesh per material + shadow flags,
+ * so the box costs ~1 draw call per material instead of one per part.
+ * InstancedMeshes are kept as they are. Picking uses OBBs in main.js, not these meshes.
+ */
+function mergeStaticMeshes(group) {
+  group.updateMatrixWorld(true);
+  const toGroupSpace = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const buckets = new Map();
+  const merged = [];
+
+  group.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh) return;
+    const key = `${o.material.uuid}|${o.castShadow ? 1 : 0}|${o.receiveShadow ? 1 : 0}`;
+    if (!buckets.has(key)) buckets.set(key, { material: o.material, cast: o.castShadow, receive: o.receiveShadow, geoms: [] });
+    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    g.clearGroups();
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    }
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toGroupSpace, o.matrixWorld));
+    buckets.get(key).geoms.push(g);
+    merged.push(o);
+  });
+
+  for (const o of merged) {
+    o.removeFromParent();
+    o.geometry.dispose();
+  }
+  // Empty helper groups (screws) are left behind; drop them
+  for (const child of [...group.children]) {
+    if (child.isGroup && child.children.length === 0) group.remove(child);
+  }
+
+  for (const { material, cast, receive, geoms } of buckets.values()) {
+    const mesh = new THREE.Mesh(mergeGeometries(geoms, false), material);
+    geoms.forEach((g) => g.dispose());
+    mesh.castShadow = cast;
+    mesh.receiveShadow = receive;
+    mesh.matrixAutoUpdate = false;
+    group.add(mesh);
+  }
+  return group;
+}
 
 export const MATERIAL = {
   FLOOR: 0,
@@ -228,7 +274,7 @@ export function buildBaseGroup(materials) {
     group.add(knuckleMesh);
   }
 
-  return group;
+  return mergeStaticMeshes(group);
 }
 
 /**
@@ -333,7 +379,7 @@ export function buildLidGroup(materials) {
     group.add(createBoxBetween(hx - 0.13, -0.005, -0.012, hx + 0.13, 0.055, wt * 0.6, 0.004, 2, brassMat));
   }
 
-  return group;
+  return mergeStaticMeshes(group);
 }
 
 /**
@@ -349,7 +395,7 @@ export function buildClaspGroup(materials) {
   group.add(createBoxBetween(-0.078, -0.24, -0.01, 0.078, -0.19, 0.022, 0.006, 2, brassMat));
   group.add(createBoxBetween(-0.035, -0.14, 0.005, 0.035, 0.03, 0.032, 0.006, 2, brassMat));
 
-  return group;
+  return mergeStaticMeshes(group);
 }
 
 /**

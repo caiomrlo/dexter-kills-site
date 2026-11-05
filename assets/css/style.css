@@ -283,6 +283,12 @@ html, body {
     #060505;
 }
 
+/* The WebGL renderer draws this atmosphere in its last pass (cheaper than a blended full-screen layer);
+   the CSS version stays only as the fallback when WebGL fails to start */
+.webgl-backdrop .dark-backdrop {
+  display: none;
+}
+
 .dark-backdrop::before,
 .dark-backdrop::after {
   content: '';

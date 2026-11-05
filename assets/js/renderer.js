@@ -13,8 +13,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Pass } from 'three/addons/postprocessing/Pass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { CopyShader } from 'three/addons/shaders/CopyShader.js';
 import { HorizontalBlurShader } from 'three/addons/shaders/HorizontalBlurShader.js';
 import { VerticalBlurShader } from 'three/addons/shaders/VerticalBlurShader.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
@@ -38,6 +39,8 @@ import {
 
 // Objects on this layer skip the (blurred) main pass and are drawn sharp on top
 const FOCUS_LAYER = 1;
+// Slides resting in the rack: seen by the main camera, skipped by the floor reflection camera
+const RACK_LAYER = 2;
 
 /**
  * Draws only the FOCUS_LAYER objects over the already-blurred frame (depth cleared,
@@ -64,6 +67,130 @@ class FocusLayerPass extends Pass {
   }
 }
 
+const shaderMat = (shader) =>
+  new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.clone(shader.uniforms),
+    vertexShader: shader.vertexShader,
+    fragmentShader: shader.fragmentShader,
+    depthTest: false,
+    depthWrite: false
+  });
+
+/**
+ * Depth-of-field blur for the kill reveal, done at half resolution.
+ * Same two separable gaussian passes as before (spread given in UV units, so it looks the same),
+ * at a quarter of the pixel cost. The result is scaled back up into the composer chain.
+ */
+class HalfResBlurPass extends Pass {
+  constructor() {
+    super();
+    this.needsSwap = true;
+    this.spread = 0; // in full-resolution pixels
+    const opts = { type: THREE.HalfFloatType, depthBuffer: false };
+    this.rtA = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtB = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.copyMat = shaderMat(CopyShader);
+    this.hMat = shaderMat(HorizontalBlurShader);
+    this.vMat = shaderMat(VerticalBlurShader);
+    this.quad = new FullScreenQuad(null);
+  }
+
+  setSize(width, height) {
+    const w = Math.max(1, Math.floor(width / 2));
+    const h = Math.max(1, Math.floor(height / 2));
+    this.rtA.setSize(w, h);
+    this.rtB.setSize(w, h);
+  }
+
+  _draw(renderer, mat, input, output) {
+    mat.uniforms.tDiffuse.value = input.texture;
+    this.quad.material = mat;
+    renderer.setRenderTarget(output);
+    this.quad.render(renderer);
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    const w = Math.max(1, readBuffer.width);
+    const h = Math.max(1, readBuffer.height);
+    const px = this.spread;
+    this._draw(renderer, this.copyMat, readBuffer, this.rtA);
+    this.hMat.uniforms.h.value = px / w;
+    this._draw(renderer, this.hMat, this.rtA, this.rtB);
+    this.vMat.uniforms.v.value = px / h;
+    this._draw(renderer, this.vMat, this.rtB, this.rtA);
+    this.hMat.uniforms.h.value = (px * 2.0) / w;
+    this._draw(renderer, this.hMat, this.rtA, this.rtB);
+    this.vMat.uniforms.v.value = (px * 2.0) / h;
+    this._draw(renderer, this.vMat, this.rtB, this.rtA);
+    this._draw(renderer, this.copyMat, this.rtA, this.renderToScreen ? null : writeBuffer);
+  }
+}
+
+/**
+ * The page's dark atmosphere (charcoal haze, red corner glows, film grain, vignette), drawn as the
+ * last pass instead of a full-screen CSS layer with mix-blend-mode: screen over the canvas.
+ * Mirrors the old .dark-backdrop CSS: same gradients, then screen-blended over the frame.
+ * Works in display (sRGB) space, after OutputPass, like the browser did.
+ */
+const BackdropShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uOpacity: { value: 1.0 },
+    uResolution: { value: new THREE.Vector2(1, 1) }, // CSS pixels
+    uPixelRatio: { value: 1.0 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uOpacity;
+    uniform vec2 uResolution;
+    uniform float uPixelRatio;
+    varying vec2 vUv;
+
+    // CSS radial-gradient(ellipse rx ry at c, rgba(col, a), transparent 70%) composited over dst
+    vec3 glow(vec3 dst, vec2 p, vec2 c, vec2 r, vec3 col, float a) {
+      float d = length((p - c) / r);
+      float alpha = a * (1.0 - clamp(d / 0.7, 0.0, 1.0));
+      return mix(dst, col, alpha);
+    }
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+
+    void main() {
+      vec4 frame = texture2D(tDiffuse, vUv);
+      vec2 res = uResolution;
+      vec2 p = vec2(vUv.x, 1.0 - vUv.y) * res; // CSS pixels, y down
+
+      vec3 s = vec3(6.0, 5.0, 5.0) / 255.0;
+      s = glow(s, p, vec2(res.x, 0.0), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.12);
+      s = glow(s, p, vec2(0.0, res.y), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.16);
+      s = glow(s, p, res * vec2(0.5, 0.48), res * vec2(0.55, 0.45), vec3(70.0, 66.0, 66.0) / 255.0, 0.20);
+
+      // Film grain: white noise at 9% (like the old SVG feTurbulence tile, mean 0.5)
+      float n = 0.5 + (hash(floor(gl_FragCoord.xy / uPixelRatio)) - 0.5) * 0.4;
+      s = mix(s, vec3(1.0), 0.09 * n);
+
+      // Vignette: farthest-corner ellipse, transparent 40% -> black 0.9 at 100%, multiply
+      float dv = length((p - res * 0.5) / (res * 0.5)) / 1.41421356;
+      s *= 1.0 - 0.9 * clamp((dv - 0.4) / 0.6, 0.0, 1.0);
+
+      // screen(frame over the black page, backdrop)
+      vec3 scr = 1.0 - (1.0 - frame.rgb) * (1.0 - s);
+      gl_FragColor = mix(frame, vec4(scr, 1.0), uOpacity);
+    }
+  `
+};
+
 export class TrophyBoxRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -81,15 +208,16 @@ export class TrophyBoxRenderer {
     this.reflector = null;
 
     this.slideObjects = [];
-    this.camLightRig = null;
-    this.floatKeyLight = null;
-    this.floatRimLight = null;
+    this.keyPoint = null;
+    this.rimPoint = null;
+    this._forceRender = true; // draw the next frame even if nothing moved
   }
 
   async init() {
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      // The composer renders into its own MSAA target, so canvas antialiasing would be wasted
+      antialias: false,
       powerPreference: 'high-performance',
       // Transparent so the closed-box stage (background + headline) shows behind the box
       alpha: true
@@ -98,6 +226,9 @@ export class TrophyBoxRenderer {
     this.renderer.setClearColor(0x000000, 0.0);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Only the box casts shadows: the map is redrawn when the lid or clasp move (see render())
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.16;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -108,6 +239,7 @@ export class TrophyBoxRenderer {
     this.scene.background = null;
 
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 50.0);
+    this.camera.layers.enable(RACK_LAYER);
 
     // 1. Generate Studio PMREM Environment Map for realistic PBR reflections
     this._createStudioEnvironment();
@@ -125,6 +257,44 @@ export class TrophyBoxRenderer {
     this._setupPostProcessing();
 
     this.resize();
+    await this._warmUp();
+  }
+
+  /**
+   * Compiles every shader up front (box, blood, glass, shadows, reflection, dossier blur)
+   * so nothing stalls the first time it scrolls into view.
+   */
+  async _warmUp() {
+    const cam = this.camera;
+    cam.position.set(0, 3.5, 8.0);
+    cam.lookAt(0, 0.6, 0);
+    cam.updateMatrixWorld();
+
+    // Programs are built for the target they render into (linear HDR buffer, not the canvas)
+    this.renderer.setRenderTarget(this.composer.readBuffer);
+    if (this.renderer.compileAsync) {
+      try {
+        await this.renderer.compileAsync(this.scene, cam);
+      } catch (e) {
+        /* falls back to compiling during the warm-up frame */
+      }
+    }
+    this.renderer.setRenderTarget(null);
+
+    this.blurPass.enabled = true;
+    this.focusPass.enabled = true;
+    this.focusCamera.copy(cam, false);
+    this.focusCamera.layers.set(FOCUS_LAYER);
+    this.renderer.shadowMap.needsUpdate = true;
+    this.composer.render();
+    this.blurPass.enabled = false;
+    this.focusPass.enabled = false;
+
+    // Nothing from the warm-up frame stays on screen
+    this.renderer.setRenderTarget(null);
+    this.renderer.clear();
+    this.renderer.shadowMap.needsUpdate = true;
+    this._forceRender = true;
   }
 
   /**
@@ -622,22 +792,19 @@ export class TrophyBoxRenderer {
     rimLight.position.set(0.0, 4.2, -4.8);
     this.scene.add(rimLight);
 
-    // 6. Soft Camera-Following Light Rig for the 7 Free-Floating Blood Slides in Sections 1-3
-    this.camLightRig = new THREE.Group();
-    this.floatKeyLight = new THREE.PointLight(0xfff0dd, 4.2, 22.0, 1.2);
-    this.floatKeyLight.position.set(3.5, 2.8, -1.8);
-    this.camLightRig.add(this.floatKeyLight);
-
-    this.floatRimLight = new THREE.PointLight(0xd8e8ff, 3.5, 22.0, 1.2);
-    this.floatRimLight.position.set(-3.8, -1.8, -2.5);
-    this.camLightRig.add(this.floatRimLight);
-
-    this.scene.add(this.camLightRig);
-
-    // 7. Kill reveal lights: follow the slide in focus (blood-red rim from behind + cool key)
-    this.focusRimLight = new THREE.PointLight(0xff1a24, 0.0, 6.0, 1.6);
-    this.focusKeyLight = new THREE.PointLight(0xf4f1ff, 0.0, 6.0, 1.6);
-    this.scene.add(this.focusRimLight, this.focusKeyLight);
+    // 6/7. Two point lights with two jobs, never needed at the same time
+    // (every light costs every pixel, even at intensity 0):
+    // - Sections 1-3: camera-following key + rim for the 7 free-floating blood slides
+    // - Kill reveal: follow the slide in focus (cool key + blood-red rim from behind)
+    this.keyPoint = new THREE.PointLight(0xfff0dd, 0.0, 22.0, 1.2);
+    this.rimPoint = new THREE.PointLight(0xd8e8ff, 0.0, 22.0, 1.2);
+    this.scene.add(this.keyPoint, this.rimPoint);
+    this.floatKeyOffset = new THREE.Vector3(3.5, 2.8, -1.8); // camera space
+    this.floatRimOffset = new THREE.Vector3(-3.8, -1.8, -2.5);
+    this.floatKeyColor = new THREE.Color(0xfff0dd);
+    this.floatRimColor = new THREE.Color(0xd8e8ff);
+    this.focusKeyColor = new THREE.Color(0xf4f1ff);
+    this.focusRimColor = new THREE.Color(0xff1a24);
 
     // Lights must also light the sharp focus layer
     this.scene.traverse((o) => {
@@ -662,16 +829,9 @@ export class TrophyBoxRenderer {
 
     // Depth of field for the kill reveal: blur the scene, then draw the focused slide sharp on top.
     // Two separable gaussian passes at different spreads give a soft, ghost-free blur.
-    this.blurPasses = [
-      new ShaderPass(HorizontalBlurShader),
-      new ShaderPass(VerticalBlurShader),
-      new ShaderPass(HorizontalBlurShader),
-      new ShaderPass(VerticalBlurShader)
-    ];
-    this.blurPasses.forEach((p) => {
-      p.enabled = false;
-      this.composer.addPass(p);
-    });
+    this.blurPass = new HalfResBlurPass();
+    this.blurPass.enabled = false;
+    this.composer.addPass(this.blurPass);
 
     this.focusCamera = new THREE.PerspectiveCamera();
     this.focusPass = new FocusLayerPass(this.scene, this.focusCamera);
@@ -689,6 +849,9 @@ export class TrophyBoxRenderer {
 
     const outputPass = new OutputPass();
     this.composer.addPass(outputPass);
+
+    this.backdropPass = new ShaderPass(BackdropShader);
+    this.composer.addPass(this.backdropPass);
   }
 
   resize() {
@@ -699,9 +862,15 @@ export class TrophyBoxRenderer {
     const width = Math.max(1, Math.floor(clientW * dpr));
     const height = Math.max(1, Math.floor(clientH * dpr));
 
+    if (this.backdropPass) {
+      this.backdropPass.uniforms.uResolution.value.set(clientW, clientH);
+      this.backdropPass.uniforms.uPixelRatio.value = dpr;
+    }
+
     if (this.canvas.width === width && this.canvas.height === height) {
       return;
     }
+    this._forceRender = true;
 
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(clientW, clientH, false);
@@ -712,11 +881,67 @@ export class TrophyBoxRenderer {
     }
   }
 
+  /**
+   * Everything that decides what the frame looks like, packed into one array.
+   * When it matches the last drawn frame, the frame is skipped and the canvas keeps its image.
+   */
+  _frameSignature(sceneState, boxVisible) {
+    const sig = this._sig || (this._sig = new Float32Array(32 + 16 * 2 + BOX_SPECS.numSlides * 20));
+    let k = 0;
+    const put = (v) => { sig[k++] = v; };
+    const putM = (m) => { for (let i = 0; i < 16; i++) sig[k++] = m[i]; };
+
+    put(this.canvas.width);
+    put(this.canvas.height);
+    put(boxVisible ? 1 : 0);
+    put(sceneState.screenShiftX || 0);
+    put(sceneState.backgroundBlur || 0);
+    put(sceneState.backdropOpacity ?? 1);
+    put(sceneState.lidOpenProgress || 0);
+    putM(sceneState.viewMatrix);
+    if (boxVisible) {
+      putM(sceneState.lidMatrix);
+      putM(sceneState.claspMatrix);
+    }
+    for (const s of sceneState.slides) {
+      if (!(boxVisible || s.isFloating)) continue;
+      putM(s.modelMatrix);
+      put(s.hoverProgress);
+      put(s.selectProgress);
+      put(s.focusProgress || 0);
+      put(s.focusDetached ? 1 : 0);
+    }
+    return k;
+  }
+
+  _signatureChanged(len) {
+    const sig = this._sig;
+    const last = this._lastSig || (this._lastSig = new Float32Array(sig.length));
+    let changed = len !== this._lastSigLen;
+    for (let i = 0; !changed && i < len; i++) {
+      if (Math.abs(sig[i] - last[i]) > 1e-5) changed = true;
+    }
+    if (changed) {
+      last.set(sig);
+      this._lastSigLen = len;
+    }
+    return changed;
+  }
+
   render(sceneState) {
     if (!this.renderer) return;
 
     const boxVisible = sceneState.boxVisible !== false;
-    this.boxRoot.visible = boxVisible;
+
+    // Nothing moved since the last drawn frame: keep the current image on the canvas
+    const sigLen = this._frameSignature(sceneState, boxVisible);
+    if (!this._signatureChanged(sigLen) && !this._forceRender) return;
+    this._forceRender = false;
+
+    if (this.boxRoot.visible !== boxVisible) {
+      this.boxRoot.visible = boxVisible;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
 
     // 1. Sync Three.js Camera from main.js matrices / state
     const aspect = Math.max(1, this.canvas.width) / Math.max(1, this.canvas.height);
@@ -737,19 +962,22 @@ export class TrophyBoxRenderer {
     const camZ = sceneState.cameraPos[2];
     this.camera.position.set(camX, camY, camZ);
 
-    // Move the floating-slide light rig with the camera, fading it out smoothly as we approach the Trophy Box
-    if (this.camLightRig) {
-      this.camLightRig.position.copy(this.camera.position);
-      this.camLightRig.quaternion.setFromRotationMatrix(this.camera.matrixWorld);
-      const floatLightFade = Math.max(0.0, Math.min(1.0, (camY - 9.0) / 6.0));
-      this.floatKeyLight.intensity = 3.8 * floatLightFade;
-      this.floatRimLight.intensity = 3.2 * floatLightFade;
-    }
-
     // 2. Update Box Matrices (Base, Lid, Swinging Clasp + Floor Reflections)
     if (boxVisible) {
       this.baseGroup.matrix.fromArray(sceneState.baseMatrix);
       this.baseGroup.updateMatrixWorld(true);
+
+      // The box is the only shadow caster: redraw the shadow map only when the lid or clasp moved
+      const lidSig = this._lidSig || (this._lidSig = new Float32Array(32));
+      let moved = false;
+      for (let i = 0; i < 16; i++) {
+        const a = sceneState.lidMatrix[i];
+        const b = sceneState.claspMatrix[i];
+        if (Math.abs(a - lidSig[i]) > 1e-6 || Math.abs(b - lidSig[16 + i]) > 1e-6) moved = true;
+        lidSig[i] = a;
+        lidSig[16 + i] = b;
+      }
+      if (moved) this.renderer.shadowMap.needsUpdate = true;
 
       this.lidGroup.matrix.fromArray(sceneState.lidMatrix);
       this.lidGroup.updateMatrixWorld(true);
@@ -768,10 +996,8 @@ export class TrophyBoxRenderer {
       this.indexCardMat.envMapIntensity = 0.18 * lidFactor;
     }
 
-    // 3. Update & Sort all 24 Glass Slides back-to-front relative to Camera
-    const slideOrder = [];
-    // Kill reveal: each slide carries its own focusProgress (two can cross during a swap);
-    // the reveal lights follow whichever slide is most in focus
+    // 3. Point lights: kill reveal (follow the slide most in focus; two can cross during a swap)
+    // or the camera-following rig for the floating slides, fading out as we approach the box
     let fs = null;
     let focusAmt = 0;
     for (const sl of sceneState.slides) {
@@ -781,21 +1007,35 @@ export class TrophyBoxRenderer {
       }
     }
 
-    if (this.focusRimLight) {
-      if (fs && focusAmt > 0.001) {
-        const [fx, fy, fz] = fs.worldPos;
-        // Rim sits behind the slide (away from camera) and down-left; key comes from upper-right
-        const bx = fx - camX, by = fy - camY, bz = fz - camZ;
-        const len = Math.hypot(bx, by, bz) || 1;
-        this.focusRimLight.position.set(fx + (bx / len) * 0.9 - 0.7, fy + (by / len) * 0.9 - 0.4, fz + (bz / len) * 0.9);
-        this.focusKeyLight.position.set(fx + 0.9, fy + 1.1, fz - (bz / len) * -0.6);
-        this.focusRimLight.intensity = 3.5 * focusAmt;
-        this.focusKeyLight.intensity = 1.6 * focusAmt;
-      } else {
-        this.focusRimLight.intensity = 0;
-        this.focusKeyLight.intensity = 0;
-      }
+    if (fs && focusAmt > 0.001) {
+      const [fx, fy, fz] = fs.worldPos;
+      // Rim sits behind the slide (away from camera) and down-left; key comes from upper-right
+      const bx = fx - camX, by = fy - camY, bz = fz - camZ;
+      const len = Math.hypot(bx, by, bz) || 1;
+      this.rimPoint.position.set(fx + (bx / len) * 0.9 - 0.7, fy + (by / len) * 0.9 - 0.4, fz + (bz / len) * 0.9);
+      this.keyPoint.position.set(fx + 0.9, fy + 1.1, fz - (bz / len) * -0.6);
+      this.rimPoint.color.copy(this.focusRimColor);
+      this.keyPoint.color.copy(this.focusKeyColor);
+      this.rimPoint.intensity = 3.5 * focusAmt;
+      this.keyPoint.intensity = 1.6 * focusAmt;
+      this.rimPoint.distance = this.keyPoint.distance = 6.0;
+      this.rimPoint.decay = this.keyPoint.decay = 1.6;
+    } else {
+      const floatLightFade = Math.max(0.0, Math.min(1.0, (camY - 9.0) / 6.0));
+      this.keyPoint.position.copy(this.floatKeyOffset).applyMatrix4(this.camera.matrixWorld);
+      this.rimPoint.position.copy(this.floatRimOffset).applyMatrix4(this.camera.matrixWorld);
+      this.keyPoint.color.copy(this.floatKeyColor);
+      this.rimPoint.color.copy(this.floatRimColor);
+      this.keyPoint.intensity = 3.8 * floatLightFade;
+      this.rimPoint.intensity = 3.2 * floatLightFade;
+      this.keyPoint.distance = this.rimPoint.distance = 22.0;
+      this.keyPoint.decay = this.rimPoint.decay = 1.2;
     }
+
+    // 4. Update & Sort all 24 Glass Slides back-to-front relative to Camera
+    const slideOrder = this._slideOrder || (this._slideOrder = []);
+    const orderPool = this._orderPool || (this._orderPool = []);
+    slideOrder.length = 0;
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = sceneState.slides[i];
@@ -842,12 +1082,15 @@ export class TrophyBoxRenderer {
       const dx = s.worldPos[0] - camX;
       const dy = s.worldPos[1] - camY;
       const dz = s.worldPos[2] - camZ;
-      const distSq = dx * dx + dy * dy + dz * dz;
-      slideOrder.push({ slideObj, distSq, isElevated: isHighFloating > 0.02 || activeAmt > 0.02 });
+      const entry = orderPool[i] || (orderPool[i] = { slideObj: null, distSq: 0, isElevated: false });
+      entry.slideObj = slideObj;
+      entry.distSq = dx * dx + dy * dy + dz * dz;
+      entry.isElevated = isHighFloating > 0.02 || activeAmt > 0.02;
+      slideOrder.push(entry);
     }
 
     // Farthest slide gets lowest renderOrder; closest slide gets highest renderOrder.
-    slideOrder.sort((a, b) => b.distSq - a.distSq);
+    slideOrder.sort(byDistanceDesc);
     for (let k = 0; k < slideOrder.length; k++) {
       const { slideObj, isElevated } = slideOrder[k];
       if (isElevated) {
@@ -862,31 +1105,28 @@ export class TrophyBoxRenderer {
       }
     }
 
-    // 4. Depth of field: focused slide on its own sharp layer, everything else blurred
+    // 5. Layers per slide:
+    // - focused slide on its own sharp layer (depth of field: everything else gets blurred)
+    // - slides resting in the rack on a layer the floor reflection skips (the box walls hide them there)
     let detach = false;
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
+      const s = sceneState.slides[i];
       const slideObj = this.slideObjects[i];
-      const want = !!sceneState.slides[i].focusDetached;
-      if (slideObj.onFocusLayer !== want) {
-        slideObj.group.traverse((o) => o.layers.set(want ? FOCUS_LAYER : 0));
-        slideObj.onFocusLayer = want;
+      const focus = !!s.focusDetached;
+      const inRack = !focus && s.worldPos[1] < 0.6 && (s.focusProgress || 0) < 0.001;
+      const layer = focus ? FOCUS_LAYER : inRack ? RACK_LAYER : 0;
+      if (slideObj.layer !== layer) {
+        slideObj.group.traverse((o) => o.layers.set(layer));
+        slideObj.layer = layer;
       }
-      detach = detach || want;
+      detach = detach || focus;
     }
 
-    if (this.blurPasses) {
+    if (this.blurPass) {
       const blur = Math.max(0, Math.min(1, sceneState.backgroundBlur || 0));
-      const blurOn = blur > 0.01;
       // Spread in pixels scales with the drawing-buffer height so it looks the same at any DPR
-      const px = blur * 2.6 * (this.canvas.height / 900);
-      const w = Math.max(1, this.canvas.width);
-      const h = Math.max(1, this.canvas.height);
-      const [h1, v1, h2, v2] = this.blurPasses;
-      h1.uniforms.h.value = px / w;
-      v1.uniforms.v.value = px / h;
-      h2.uniforms.h.value = (px * 2.0) / w;
-      v2.uniforms.v.value = (px * 2.0) / h;
-      this.blurPasses.forEach((p) => (p.enabled = blurOn));
+      this.blurPass.spread = blur * 2.6 * (this.canvas.height / 900);
+      this.blurPass.enabled = blur > 0.01;
 
       this.focusPass.enabled = detach;
       if (detach) {
@@ -895,11 +1135,22 @@ export class TrophyBoxRenderer {
       }
     }
 
-    // 5. Render with Integrated Post-Processing
+    // 6. Page atmosphere (fades out on the closed-box stage)
+    if (this.backdropPass) {
+      const op = Math.max(0, Math.min(1, sceneState.backdropOpacity ?? 1));
+      this.backdropPass.uniforms.uOpacity.value = op;
+      this.backdropPass.enabled = op > 0.001;
+    }
+
+    // 7. Render with Integrated Post-Processing
     if (this.composer) {
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
     }
   }
+}
+
+function byDistanceDesc(a, b) {
+  return b.distSq - a.distSq;
 }
