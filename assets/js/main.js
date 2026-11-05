@@ -1251,9 +1251,11 @@ class DexterBoxApp {
     if (back) back.classList.add('is-split');
 
     gsap.set(hero, { visibility: 'visible' });
+    gsap.set(back, { xPercent: -50, yPercent: -50 });
     gsap.set(letters, { yPercent: 105, opacity: 0 });
-    gsap.set(figure, { opacity: 0, y: 60, scale: 1.04 });
-    gsap.set(front, { opacity: 0, y: 40, letterSpacing: '0.7em' });
+    // Dexter is on screen from the first frame and only grows in slightly
+    gsap.set(figure, { scale: 0.94, transformOrigin: '50% 100%' });
+    gsap.set(front, { opacity: 0, yPercent: 35, letterSpacing: '0.7em' });
     gsap.set(bg, { scale: 1.12 });
     if (indicator) gsap.set(indicator, { opacity: 0, y: 14 });
 
@@ -1261,8 +1263,8 @@ class DexterBoxApp {
     intro
       .to(bg, { scale: 1.04, duration: 2.6, ease: 'power2.out' }, 0)
       .to(letters, { yPercent: 0, opacity: 1, duration: 1.3, stagger: 0.07, ease: 'expo.out' }, 0.15)
-      .to(figure, { opacity: 1, y: 0, scale: 1, duration: 1.6, ease: 'power3.out' }, 0.45)
-      .to(front, { opacity: 1, y: 0, letterSpacing: window.matchMedia('(max-aspect-ratio: 3/4)').matches ? '0.3em' : '0.38em', duration: 1.4, ease: 'expo.out' }, 0.95);
+      .to(figure, { scale: 1, duration: 2.6, ease: 'power2.out' }, 0)
+      .to(front, { opacity: 1, yPercent: 0, letterSpacing: window.matchMedia('(max-aspect-ratio: 3/4)').matches ? '0.3em' : '0.38em', duration: 1.4, ease: 'expo.out' }, 0.95);
     if (indicator) intro.to(indicator, { opacity: 0.72, y: 0, duration: 0.9, ease: 'power2.out' }, 1.5);
     this.pageShown.then(() => intro.play());
 
@@ -1276,10 +1278,14 @@ class DexterBoxApp {
       onUpdate: (self) => root.style.setProperty('--hero-cover', (1 - self.progress).toFixed(4))
     });
     gsap.to(bg, { yPercent: 14, ease: 'none', scrollTrigger: away });
-    gsap.to('.hero-title', { yPercent: -18, ease: 'none', scrollTrigger: away });
+    // Words move one by one (a transform on their wrapper would push "KILLS" under Dexter)
+    const lift = () => -window.innerHeight * 0.18;
+    gsap.to([back, front], { y: lift, ease: 'none', scrollTrigger: { ...away, invalidateOnRefresh: true } });
     gsap.to(figure, { yPercent: 6, ease: 'none', scrollTrigger: away });
     // Darkens as it leaves, so the hand-off to the 3D scene reads as a fade into the night
     gsap.to(hero, { '--hero-dim': 0.75, ease: 'none', scrollTrigger: away });
+
+    this._initHeroPointer(gsap, ScrollTrigger, hero, bg, back);
 
     if (indicator) {
       ScrollTrigger.create({
@@ -1293,6 +1299,55 @@ class DexterBoxApp {
         onEnterBack: () => indicator.classList.remove('is-paused')
       });
     }
+  }
+
+  /**
+   * Hero mouse parallax: the background and "DEXTER" drift with the cursor at different strengths.
+   * Uses the CSS `translate` property, so it stacks with the GSAP transforms (intro + scroll).
+   */
+  _initHeroPointer(gsap, ScrollTrigger, hero, bg, back) {
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!finePointer || reduced) return;
+
+    // Max shift in px at the screen edges (negative = moves against the cursor)
+    const layers = [
+      { el: bg, x: -18, y: -12 },
+      { el: back, x: -34, y: -18 }
+    ].filter((l) => l.el);
+    const target = { x: 0, y: 0 };
+    const now = { x: 0, y: 0 };
+    let visible = true;
+
+    window.addEventListener(
+      'pointermove',
+      (e) => {
+        target.x = (e.clientX / window.innerWidth) * 2 - 1; // -1 .. 1
+        target.y = (e.clientY / window.innerHeight) * 2 - 1;
+      },
+      { passive: true }
+    );
+    document.documentElement.addEventListener('pointerleave', () => {
+      target.x = 0;
+      target.y = 0;
+    });
+    ScrollTrigger.create({
+      trigger: hero,
+      start: 'top bottom',
+      end: 'bottom top',
+      onToggle: (self) => (visible = self.isActive)
+    });
+
+    gsap.ticker.add((time, deltaMs) => {
+      if (!visible) return;
+      const k = 1 - Math.exp(-3.2 * (deltaMs / 1000)); // soft, laggy follow
+      now.x += (target.x - now.x) * k;
+      now.y += (target.y - now.y) * k;
+      if (Math.abs(target.x - now.x) < 1e-4 && Math.abs(target.y - now.y) < 1e-4) return;
+      for (const l of layers) {
+        l.el.style.translate = `${(now.x * l.x).toFixed(2)}px ${(now.y * l.y).toFixed(2)}px`;
+      }
+    });
   }
 
   /**
