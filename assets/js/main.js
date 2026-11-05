@@ -254,9 +254,8 @@ class DexterBoxApp {
     this.invLidMatrix = Mat4.create();
     this.claspMatrix = Mat4.create();
 
-    // Pointer / Drag Tracking
-    this.isDragging = false;
-    this.pointerDownPos = [0, 0];
+    // Pointer tracking (clicks only; the box can't be rotated by dragging)
+    this.isPressing = false;
     this.lastPointerPos = [0, 0];
     this.dragDistance = 0;
 
@@ -362,6 +361,8 @@ class DexterBoxApp {
   }
 
   async start() {
+    // Resolves once the loading screen has faded out (the hero entrance waits for it)
+    this.pageShown = new Promise((resolve) => { this._resolvePageShown = resolve; });
     this._initScrollAndTypography();
     if (this.killPanel && KILLS[this.killIndex]) {
       this.killPanel.setKill(KILLS[this.killIndex], this.killIndex, KILLS.length);
@@ -393,6 +394,24 @@ class DexterBoxApp {
       const errOverlay = document.getElementById('webgpu-error');
       if (errOverlay) errOverlay.classList.remove('hidden');
     }
+    this._hideLoader();
+  }
+
+  /** Fades the loading screen out once the fonts are in and the first 3D frame is on screen. */
+  async _hideLoader() {
+    if (document.fonts && document.fonts.ready) {
+      await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))]);
+    }
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    document.documentElement.classList.remove('is-loading');
+    const loader = document.getElementById('page-loader');
+    if (loader) {
+      loader.classList.add('is-done');
+      setTimeout(() => loader.remove(), 800);
+    }
+    if (window.ScrollTrigger) window.ScrollTrigger.refresh();
+    this._resolvePageShown();
   }
 
   _initScrollAndTypography() {
@@ -447,7 +466,9 @@ class DexterBoxApp {
             gsap.set(indicator, { opacity: 0, y: 14 });
           }
 
-          const introTl = gsap.timeline({ delay: 0.15 });
+          // Plays once the loading screen is gone
+          const introTl = gsap.timeline({ delay: 0.15, paused: true });
+          this.pageShown.then(() => introTl.play());
           introTl.to(split.words, {
             opacity: 1,
             yPercent: 0,
@@ -596,9 +617,8 @@ class DexterBoxApp {
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || this.pageScrollProgress <= 0.84) return;
       if (this.isRevealing) return;
-      this.isDragging = true;
+      this.isPressing = true;
       this.dragDistance = 0;
-      this.pointerDownPos = [e.clientX, e.clientY];
       this.lastPointerPos = [e.clientX, e.clientY];
       this.canvas.setPointerCapture(e.pointerId);
     });
@@ -614,24 +634,19 @@ class DexterBoxApp {
       const dy = e.clientY - this.lastPointerPos[1];
       this.lastPointerPos = [e.clientX, e.clientY];
 
-      if (this.isDragging) {
+      if (this.isPressing) {
         this.dragDistance += Math.hypot(dx, dy);
-        this.camera.targetYaw -= dx * 0.0075;
-        this.camera.targetPitch = Math.max(
-          0.08,
-          Math.min(1.48, this.camera.targetPitch + dy * 0.0075)
-        );
       } else {
         this._handleHover(e.clientX, e.clientY);
       }
     });
 
     this.canvas.addEventListener('pointerup', (e) => {
-      if (!this.isDragging) return;
-      this.isDragging = false;
+      if (!this.isPressing) return;
+      this.isPressing = false;
       this.canvas.releasePointerCapture(e.pointerId);
 
-      // If pointer barely moved, treat as a 3D click
+      // A press that barely moved is a click on the 3D scene
       if (this.dragDistance < 6) {
         this._handleClick(e.clientX, e.clientY);
       }

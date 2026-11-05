@@ -5,10 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dexter — Blood Slide Box (3D)</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='60' y='20' rx='6' fill='rgba(210,240,235,0.6)' stroke='%2388bbaa' stroke-width='4'/><circle cx='50' cy='50' r='18' fill='%238b0d14'/></svg>" />
+  <meta name="description" content="Dexter — a caixa de troféus com as lâminas de sangue, em 3D." />
+  <meta name="theme-color" content="#060505" />
+  <!-- Loading screen styles inline, so the first paint needs nothing from the network -->
+  <style>
+    html.is-loading, html.is-loading body { overflow: hidden; }
+    .page-loader {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+      background: radial-gradient(ellipse 55% 45% at 50% 50%, #1a0d0e 0%, #060505 70%);
+      color: #cfc7c4;
+      font: 500 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      letter-spacing: 0.42em; text-transform: uppercase;
+      transition: opacity 0.7s ease, visibility 0s linear 0.7s;
+    }
+    .page-loader.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+    .page-loader__drop {
+      width: 14px; height: 14px; background: #8b0d14;
+      border-radius: 0 50% 50% 50%; transform: rotate(45deg);
+      box-shadow: 0 0 24px rgba(139, 13, 20, 0.55);
+      animation: loader-drip 1.4s cubic-bezier(0.55, 0, 0.45, 1) infinite;
+    }
+    .page-loader__bar {
+      position: relative; width: 140px; height: 1px; overflow: hidden;
+      background: rgba(207, 199, 196, 0.16);
+    }
+    .page-loader__bar::after {
+      content: ""; position: absolute; inset: 0; width: 40%; background: #8b0d14;
+      animation: loader-sweep 1.4s ease-in-out infinite;
+    }
+    @keyframes loader-drip {
+      0% { transform: translateY(-8px) rotate(45deg) scale(0.7); opacity: 0; }
+      30% { opacity: 1; }
+      70% { transform: translateY(6px) rotate(45deg) scale(1); opacity: 1; }
+      100% { transform: translateY(16px) rotate(45deg) scale(0.9); opacity: 0; }
+    }
+    @keyframes loader-sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+    @media (prefers-reduced-motion: reduce) {
+      .page-loader__drop, .page-loader__bar::after { animation: none; }
+    }
+  </style>
+  <script>document.documentElement.classList.add('is-loading');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <!-- Fonts load without blocking the first paint (the loading screen uses system fonts) -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" /></noscript>
   <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" crossorigin />
   <script type="importmap">
     {
       "imports": {
@@ -19,6 +65,13 @@
   </script>
 </head>
 <body>
+  <!-- Tela de carregamento: some quando a cena 3D e as fontes estiverem prontas (assets/js/main.js) -->
+  <div id="page-loader" class="page-loader" role="status" aria-live="polite">
+    <span class="page-loader__drop" aria-hidden="true"></span>
+    <span class="page-loader__bar" aria-hidden="true"></span>
+    <span>Carregando</span>
+  </div>
+
   <!-- Palco da caixa fechada (Seção 5): fundo vermelho com parallax + headline atrás da caixa -->
   <div class="kills-stage" aria-hidden="true">
     <div class="kills-bg"></div>
@@ -106,10 +159,10 @@
   </div>
 
   <!-- GSAP Core + ScrollTrigger + ScrollSmoother + SplitText -->
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollSmoother.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollSmoother.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
   <script type="module" src="assets/js/main.js"></script>
 </body>
 </html>

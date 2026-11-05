@@ -311,11 +311,7 @@ html, body {
 #webgpu-canvas.canvas-interactive {
   pointer-events: auto;
   z-index: 5;
-  cursor: grab;
-}
-
-#webgpu-canvas.canvas-interactive:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
 #webgpu-canvas.canvas-interactive.pointer-interactive {
