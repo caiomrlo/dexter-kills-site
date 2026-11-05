@@ -269,18 +269,14 @@ html, body {
   touch-action: pan-y;
 }
 
-/* Dark atmospheric backdrop: charcoal haze + blood-red edge glow + vignette + film grain */
+/* Dark atmospheric backdrop: dimmed red smoke photo + vignette (fallback; WebGL pans it with scroll) */
 .dark-backdrop {
   position: fixed;
   inset: 0;
   z-index: 5; /* after the canvas in DOM order, so it paints over it at equal z */
   pointer-events: none;
   mix-blend-mode: screen;
-  background:
-    radial-gradient(ellipse 55% 45% at 50% 48%, rgba(70, 66, 66, 0.20), transparent 70%),
-    radial-gradient(ellipse 40% 55% at 0% 100%, rgba(139, 13, 20, 0.16), transparent 70%),
-    radial-gradient(ellipse 40% 55% at 100% 0%, rgba(139, 13, 20, 0.12), transparent 70%),
-    #060505;
+  background: #000 url('../img/backgrounds/smoke-bg.webp') center / cover no-repeat;
 }
 
 /* The WebGL renderer draws this atmosphere in its last pass (cheaper than a blended full-screen layer);
@@ -296,10 +292,9 @@ html, body {
   inset: 0;
 }
 
-/* Film grain */
+/* Dims the smoke so it stays in the background (matches SMOKE_STRENGTH in renderer.js) */
 .dark-backdrop::before {
-  opacity: 0.09;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background: rgba(0, 0, 0, 0.4);
 }
 
 /* Vignette (screen blend ignores black, so it only deepens via lack of added light at the edges) */

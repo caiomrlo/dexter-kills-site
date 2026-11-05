@@ -151,6 +151,9 @@ class DexterBoxApp {
     // Global scroll progress from top of Section 1 (0.0) to top of Section 4 (1.0)
     this.pageScrollProgress = 0.0;
     this.smoothScrollProgress = 0.0;
+    // Smoke background pan: 0 at the top of the page, 1 once it has faded out in the outro
+    this.smokePan = 0.0;
+    this.smoothSmokePan = 0.0;
     this.rafId = null;
 
     // Outro (Section 5) progress: 0 = box open & centered, 1 = closed & on the right
@@ -579,6 +582,19 @@ class DexterBoxApp {
           }
         });
 
+        // Smoke pan: keeps moving past the box and only ends once the backdrop has faded out
+        // in the outro, so the user never sees it come to a stop
+        ScrollTrigger.create({
+          trigger: smoothContent || document.body,
+          start: 'top top',
+          endTrigger: outroSection,
+          end: 'top 10%',
+          scrub: true,
+          onUpdate: (self) => {
+            this.smokePan = self.progress;
+          }
+        });
+
         this._initKillsStage(gsap, outroSection);
       }
 
@@ -877,6 +893,7 @@ class DexterBoxApp {
     const scrollSmooth = 1.0 - Math.exp(-12.0 * dt);
     this.smoothScrollProgress += (this.pageScrollProgress - this.smoothScrollProgress) * scrollSmooth;
     const sProg = Math.min(1.0, Math.max(0.0, this.smoothScrollProgress));
+    this.smoothSmokePan += (this.smokePan - this.smoothSmokePan) * scrollSmooth;
 
     // Camera vertical lift & pitch transition across the 4 sections:
     // During Sections 1..3 (sProg 0.0 -> 0.72), the camera is high above the Trophy Box
@@ -1368,7 +1385,8 @@ class DexterBoxApp {
       slides: this.slides,
       boxVisible,
       backgroundBlur: this.revealBlur,
-      backdropOpacity: this.backdropFx.opacity
+      backdropOpacity: this.backdropFx.opacity,
+      smokePan: this.smoothSmokePan // smoke slides right from Section 1 until it fades out after the box
     });
 
     this.rafId = requestAnimationFrame((t) => this._loop(t));

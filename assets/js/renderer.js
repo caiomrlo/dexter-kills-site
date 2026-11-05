@@ -128,41 +128,34 @@ class HalfResBlurPass extends Pass {
 }
 
 /**
- * The page's dark atmosphere (charcoal haze, red corner glows, film grain, vignette).
- * Mirrors the old .dark-backdrop CSS layer (same gradients, screen-blended over the frame),
- * but runs inside the OutputPass right after tone mapping + sRGB, so it costs no extra
- * full-screen pass. Works in display (sRGB) space, like the browser did.
+ * The page's dark atmosphere: a red smoke photo that slides to the right as the page scrolls
+ * (Section 1 -> the box), plus a vignette. Screen-blended over the frame inside
+ * the OutputPass right after tone mapping + sRGB, so it costs no extra full-screen pass.
+ * Works in display (sRGB) space, like the browser did.
  */
+const SMOKE_URL = 'assets/img/backgrounds/smoke-bg.webp';
+const SMOKE_MIN_WIDTH = 1.5; // image is at least 1.5x the viewport width, so there is room to pan
+const SMOKE_STRENGTH = 0.6;  // brightness of the smoke (1 = the photo as is)
+
 const BACKDROP_GLSL = /* glsl */ `
   uniform float uBackdrop;
   uniform vec2 uResolution;  // CSS pixels
   uniform float uPixelRatio;
-
-  // CSS radial-gradient(ellipse rx ry at c, rgba(col, a), transparent 70%) composited over dst
-  vec3 bdGlow(vec3 dst, vec2 p, vec2 c, vec2 r, vec3 col, float a) {
-    float d = length((p - c) / r);
-    float alpha = a * (1.0 - clamp(d / 0.7, 0.0, 1.0));
-    return mix(dst, col, alpha);
-  }
-
-  float bdHash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
+  uniform sampler2D uSmoke;
+  uniform vec2 uSmokeSize;   // image size in pixels
+  uniform float uSmokePan;   // 0 = top of the page, 1 = the box
 
   vec4 applyBackdrop(vec4 frame, vec2 uv) {
     vec2 res = uResolution;
     vec2 p = vec2(uv.x, 1.0 - uv.y) * res; // CSS pixels, y down
 
-    vec3 s = vec3(6.0, 5.0, 5.0) / 255.0;
-    s = bdGlow(s, p, vec2(res.x, 0.0), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.12);
-    s = bdGlow(s, p, vec2(0.0, res.y), res * vec2(0.40, 0.55), vec3(139.0, 13.0, 20.0) / 255.0, 0.16);
-    s = bdGlow(s, p, res * vec2(0.5, 0.48), res * vec2(0.55, 0.45), vec3(70.0, 66.0, 66.0) / 255.0, 0.20);
-
-    // Film grain: white noise at 9% (like the old SVG feTurbulence tile, mean 0.5)
-    float n = 0.5 + (bdHash(floor(gl_FragCoord.xy / uPixelRatio)) - 0.5) * 0.4;
-    s = mix(s, vec3(1.0), 0.09 * n);
+    // Smoke: covers the screen, wider than it, left edge travels from -overflow to 0 (moves right)
+    float scale = max(res.y / uSmokeSize.y, res.x * ${SMOKE_MIN_WIDTH.toFixed(2)} / uSmokeSize.x);
+    vec2 size = uSmokeSize * scale;
+    vec2 origin = vec2(-(size.x - res.x) * (1.0 - uSmokePan), (res.y - size.y) * 0.5);
+    vec2 st = (p - origin) / size;
+    // Toned down so the smoke stays in the background (no white grain: it greyed the whole page)
+    vec3 s = texture2D(uSmoke, vec2(st.x, 1.0 - st.y)).rgb * ${SMOKE_STRENGTH.toFixed(2)};
 
     // Vignette: farthest-corner ellipse, transparent 40% -> black 0.9 at 100%, multiply
     float dv = length((p - res * 0.5) / (res * 0.5)) / 1.41421356;
@@ -179,7 +172,10 @@ function addBackdropToOutput(outputPass) {
   Object.assign(outputPass.uniforms, {
     uBackdrop: { value: 1.0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
-    uPixelRatio: { value: 1.0 }
+    uPixelRatio: { value: 1.0 },
+    uSmoke: { value: null },
+    uSmokeSize: { value: new THREE.Vector2(2000, 1000) },
+    uSmokePan: { value: 0.0 }
   });
   const fs = outputPass.material.fragmentShader;
   const mainAt = fs.indexOf('void main()');
@@ -190,6 +186,21 @@ function addBackdropToOutput(outputPass) {
     fs.slice(mainAt, endAt) +
     '  if (uBackdrop > 0.001) gl_FragColor = applyBackdrop(gl_FragColor, vUv);\n}\n';
   outputPass.material.needsUpdate = true;
+}
+
+/** Loads the smoke photo into the backdrop (kept in sRGB: the backdrop runs in display space). */
+async function loadSmoke(outputPass) {
+  try {
+    const tex = await new THREE.TextureLoader().loadAsync(SMOKE_URL);
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    outputPass.uniforms.uSmoke.value = tex;
+    outputPass.uniforms.uSmokeSize.value.set(tex.image.width, tex.image.height);
+  } catch (err) {
+    console.warn('Smoke background failed to load', err);
+  }
 }
 
 export class TrophyBoxRenderer {
@@ -259,6 +270,7 @@ export class TrophyBoxRenderer {
     this._setupPostProcessing();
 
     this.resize();
+    if (this.outputPass) await loadSmoke(this.outputPass);
     await this._warmUp();
   }
 
@@ -1295,6 +1307,7 @@ export class TrophyBoxRenderer {
     // 6. Page atmosphere (fades out on the closed-box stage)
     if (this.outputPass) {
       this.outputPass.uniforms.uBackdrop.value = Math.max(0, Math.min(1, sceneState.backdropOpacity ?? 1));
+      this.outputPass.uniforms.uSmokePan.value = Math.max(0, Math.min(1, sceneState.smokePan ?? 0));
     }
 
     // 7. Render with Integrated Post-Processing
