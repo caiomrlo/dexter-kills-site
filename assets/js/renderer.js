@@ -272,6 +272,9 @@ export class TrophyBoxRenderer {
 
     // Programs are built for the target they render into (linear HDR buffer, not the canvas)
     this.renderer.setRenderTarget(this.composer.readBuffer);
+    // Rack glass is swapped in at runtime: put it on one slide so it gets compiled too
+    const probe = this.slideObjects[this.slideObjects.length - 1];
+    probe.glassMesh.material = probe.rackMats;
     if (this.renderer.compileAsync) {
       try {
         await this.renderer.compileAsync(this.scene, cam);
@@ -289,6 +292,7 @@ export class TrophyBoxRenderer {
     this.composer.render();
     this.blurPass.enabled = false;
     this.focusPass.enabled = false;
+    probe.glassMesh.material = probe.fullMats;
 
     // Nothing from the warm-up frame stays on screen
     this.renderer.setRenderTarget(null);
@@ -329,6 +333,14 @@ export class TrophyBoxRenderer {
     const envRT = pmremGenerator.fromScene(envScene, 0.03);
     this.scene.environment = envRT.texture;
     pmremGenerator.dispose();
+
+    // Plain cube map of the same studio for the cheap rack glass (one texture lookup per pixel)
+    this.envCubeRT = new THREE.WebGLCubeRenderTarget(128, {
+      type: THREE.HalfFloatType,
+      generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter
+    });
+    new THREE.CubeCamera(0.1, 100, this.envCubeRT).update(this.renderer, envScene);
   }
 
   _createMaterials() {
@@ -559,6 +571,122 @@ export class TrophyBoxRenderer {
     return mat;
   }
 
+  /**
+   * Cheap stand-in for the glass face while a slide rests in the rack.
+   * There, 24 transparent slides stack up behind each other, so every rack pixel runs the face
+   * shader many times. The full face is a MeshStandardMaterial lit by every light in the scene;
+   * at that distance only its environment reflection shows (the light glints on 0.04-roughness
+   * glass are a few pixels wide), so this one keeps the same look with a single cube-map lookup
+   * plus the same fresnel/rim/streak/scratch layer. Shares its uniforms with the full face.
+   */
+  _createRackGlassMaterial(faceMat) {
+    const uniforms = {
+      ...faceMat.userData.glassUniforms,
+      uEnv: { value: this.envCubeRT.texture },
+      uEnvIntensity: { value: 1.6 }
+    };
+    return new THREE.ShaderMaterial({
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.FrontSide,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+      vertexShader: `
+        varying vec2 vGlassUv;
+        varying vec3 vViewNormal;
+        varying vec3 vViewPos;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
+        void main() {
+          vGlassUv = uv;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vec4 mv = viewMatrix * wp;
+          vViewPos = mv.xyz;
+          vViewNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform samplerCube uEnv;
+        uniform float uEnvIntensity;
+        uniform sampler2D uScratchMap;
+        uniform float uPresence;
+        uniform float uActive;
+        uniform float uFocus;
+        uniform vec3 uBlood;
+        uniform float uSeed;
+        varying vec2 vGlassUv;
+        varying vec3 vViewNormal;
+        varying vec3 vViewPos;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
+
+        void main() {
+          vec3 gV = normalize(vViewPos);
+          vec3 gN = normalize(vViewNormal);
+          float gNoV = clamp(abs(dot(gN, gV)), 0.0, 1.0);
+          float gFres = pow(1.0 - gNoV, 4.0);
+
+          // Environment specular as MeshStandardMaterial computes it (roughness 0.0525, F0 0.04)
+          vec3 wN = normalize(vWorldNormal);
+          vec3 wI = normalize(vWorldPos - cameraPosition);
+          vec3 radiance = textureCube(uEnv, reflect(wI, wN)).rgb * uEnvIntensity;
+          const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+          const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+          vec4 r = 0.0525 * c0 + c1;
+          float a004 = min(r.x * r.x, exp2(-9.28 * gNoV)) * r.x + r.y;
+          vec2 fab = vec2(-1.04, 1.04) * a004 + r.zw;
+          vec3 totalSpecular = radiance * (0.04 * fab.x + fab.y);
+
+          // ---- same layer as the full glass face (_createGlassFaceMaterial) ----
+          vec2 gP = (vGlassUv - 0.5) * vec2(1.36, 0.46);
+          vec2 gEd = vec2(0.68, 0.23) - abs(gP);
+          float gEdge = min(gEd.x, gEd.y);
+          float gRim = 1.0 - smoothstep(0.0, 0.009, gEdge);
+          float gRimGlow = 1.0 - smoothstep(0.0, 0.045, gEdge);
+
+          vec3 gSpec = totalSpecular * 1.35 * (1.0 - 0.55 * uFocus);
+          gSpec = gSpec / (1.0 + gSpec * 0.9);
+          float gSpecLum = dot(gSpec, vec3(0.299, 0.587, 0.114));
+
+          float gT = gP.x * 0.32 + gP.y;
+          float gC = gN.x * 0.55 - gN.y * 0.35 + sin(uSeed * 3.7) * 0.12;
+          float gStreak = exp(-pow((gT - gC) / 0.07, 2.0)) * 0.55 + exp(-pow((gT - gC + 0.16) / 0.025, 2.0)) * 0.35;
+
+          float gScratch = texture2D(uScratchMap, vGlassUv).r;
+
+          float gBloodD = length(gP - uBlood.yz);
+          float gBloodHalo = uBlood.x * exp(-pow(gBloodD / 0.24, 2.0));
+
+          float gRedSide = smoothstep(0.1, 0.68, gP.x * sign(sin(uSeed * 5.1) + 0.001));
+          vec3 gRimCol = mix(vec3(0.80, 0.96, 0.90), vec3(1.0, 0.28, 0.24), gRedSide * (0.45 + 0.5 * uFocus));
+          gRimCol = mix(gRimCol, vec3(0.95, 0.96, 1.0), (1.0 - gRedSide) * uFocus * 0.6);
+
+          vec3 gCol = gSpec * 0.85;
+          gCol += gRimCol * gRim * (0.95 + gSpecLum * 2.5 + gFres) * (0.6 + 0.4 * uPresence);
+          gCol += gRimCol * gRimGlow * 0.06;
+          gCol += vec3(0.62, 0.68, 0.68) * 0.028 * (0.4 + 0.6 * uPresence) * (1.0 - 0.8 * uFocus);
+          gCol += vec3(0.85, 0.92, 0.95) * gStreak * (0.06 + gSpecLum * 0.6) * (0.5 + 0.5 * uPresence);
+          gCol += vec3(0.88, 0.94, 1.0) * gScratch * (0.05 + gSpecLum * 2.2 + gFres * 0.4) * (1.0 - 0.45 * uFocus);
+          gCol += vec3(0.55, 0.02, 0.03) * gBloodHalo * (0.07 + 0.12 * uFocus);
+          gCol += vec3(1.0, 0.1, 0.12) * gRimGlow * gRedSide * 0.35 * uFocus;
+          gCol += vec3(1.0, 0.86, 0.52) * uActive * (0.05 + gRim * 0.9 + gRimGlow * 0.12);
+
+          float gA = 0.03 + 0.05 * uPresence + gFres * 0.30 + gRim * 0.40 + gSpecLum * 0.25 + gScratch * 0.04;
+          gCol *= 1.0 - 0.35 * uFocus * (1.0 - gRim);
+          gl_FragColor = vec4(gCol, clamp(gA, 0.0, 0.92));
+        }
+      `
+    });
+  }
+
   /** Chamfered ground-glass side faces (the slide's thickness), bright and slightly green. */
   _createGlassEdgeMaterial() {
     return new THREE.MeshStandardMaterial({
@@ -593,6 +721,9 @@ export class TrophyBoxRenderer {
     this.claspGroup = buildClaspGroup(matBundle);
 
     this.boxRoot.add(this.baseGroup);
+    this.baseGroup.traverse((o) => {
+      if (o.isMesh && (o.material === this.rackMat || o.material === this.floorLiningMat)) o.layers.set(RACK_LAYER);
+    });
     this.boxRoot.add(this.lidGroup);
     this.boxRoot.add(this.claspGroup);
 
@@ -612,7 +743,10 @@ export class TrophyBoxRenderer {
       const faceMat = this._createGlassFaceMaterial(i, hasBlood);
       const edgeMat = this._createGlassEdgeMaterial();
 
-      const glassMesh = new THREE.Mesh(sharedSlideGeom, [faceMat, edgeMat]);
+      const rackFaceMat = this._createRackGlassMaterial(faceMat);
+      const fullMats = [faceMat, edgeMat];
+      const rackMats = [rackFaceMat, edgeMat];
+      const glassMesh = new THREE.Mesh(sharedSlideGeom, fullMats);
       glassMesh.castShadow = false;
       glassMesh.receiveShadow = false;
       slideGroup.add(glassMesh);
@@ -650,7 +784,10 @@ export class TrophyBoxRenderer {
         group: slideGroup,
         glassMesh,
         faceMat,
+        rackFaceMat,
         edgeMat,
+        fullMats,
+        rackMats,
         frontBlood,
         backBlood
       });
@@ -666,8 +803,11 @@ export class TrophyBoxRenderer {
     const floorGeom = new THREE.PlaneGeometry(16, 16);
     this.reflector = new Reflector(floorGeom, {
       clipBias: 0.003,
-      textureWidth: 512,
-      textureHeight: 512,
+      // Dim and blurred by the shader below, so 256 px is plenty
+      textureWidth: 256,
+      textureHeight: 256,
+      // No MSAA: it was most of this pass's cost, and the 6-tap blur below already smooths the edges
+      multisample: 0,
       color: 0x333333
     });
     this.reflector.rotation.x = -Math.PI * 0.5;
@@ -723,7 +863,7 @@ export class TrophyBoxRenderer {
           float contactAO = exp(-dist * 14.0) * 0.85 + exp(-dist * 2.8) * 0.25;
           
           // Soften and dim the reflection so it looks like dark polished studio obsidian/acrylic
-          vec3 reflColor = reflSample.rgb * 0.40 * radialFade;
+          vec3 reflColor = reflSample.rgb * 0.28 * radialFade;
           
           // Shadow darkens the surface
           reflColor = reflColor * (1.0 - contactAO * 0.75);
@@ -1117,8 +1257,10 @@ export class TrophyBoxRenderer {
       const layer = focus ? FOCUS_LAYER : inRack ? RACK_LAYER : 0;
       if (slideObj.layer !== layer) {
         slideObj.group.traverse((o) => o.layers.set(layer));
+        slideObj.glassMesh.material = layer === RACK_LAYER ? slideObj.rackMats : slideObj.fullMats;
         slideObj.layer = layer;
       }
+      if (inRack) slideObj.rackFaceMat.uniforms.uEnvIntensity.value = slideObj.faceMat.envMapIntensity;
       detach = detach || focus;
     }
 
