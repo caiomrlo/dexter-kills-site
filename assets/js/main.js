@@ -453,11 +453,12 @@ class DexterBoxApp {
     });
 
     const setupSplits = () => {
+      this._initHero(gsap, ScrollTrigger, SplitText);
+
       const headlines = document.querySelectorAll('[data-split-words]');
 
       headlines.forEach((headline) => {
         const section = headline.closest('.story-section');
-        const sectionIdx = Number(section?.dataset.section || 0);
 
         const split = SplitText.create(headline, {
           type: 'words',
@@ -466,93 +467,38 @@ class DexterBoxApp {
 
         gsap.set(headline, { visibility: 'visible' });
 
-        if (sectionIdx === 1) {
-          // Section 1: "ESTA É A NOITE." — Entrance animation on load
-          const indicator = section.querySelector('.scroll-indicator');
+        // Sections 1-3: words appear progressively on scroll (the Hero owns the load intro)
+        gsap.set(split.words, {
+          opacity: 0,
+          yPercent: 100,
+          rotateX: -40,
+          scale: 0.92
+        });
 
-          gsap.set(split.words, {
-            opacity: 0,
-            yPercent: 110,
-            rotateX: -45,
-            scale: 0.92
-          });
-
-          if (indicator) {
-            gsap.set(indicator, { opacity: 0, y: 14 });
+        gsap.to(split.words, {
+          opacity: 1,
+          yPercent: 0,
+          rotateX: 0,
+          scale: 1,
+          ease: 'power3.out',
+          stagger: 0.15,
+          scrollTrigger: {
+            trigger: section,
+            start: 'top 85%',
+            end: 'center 42%',
+            scrub: 1.1
           }
-
-          // Plays once the loading screen is gone
-          const introTl = gsap.timeline({ delay: 0.15, paused: true });
-          this.pageShown.then(() => introTl.play());
-          introTl.to(split.words, {
-            opacity: 1,
-            yPercent: 0,
-            rotateX: 0,
-            scale: 1,
-            duration: 1.35,
-            stagger: 0.14,
-            ease: 'expo.out'
-          });
-
-          if (indicator) {
-            introTl.to(
-              indicator,
-              {
-                opacity: 0.72,
-                y: 0,
-                duration: 0.9,
-                ease: 'power2.out'
-              },
-              '-=0.7'
-            );
-
-            gsap.to(indicator, {
-              opacity: 0,
-              y: 20,
-              ease: 'none',
-              scrollTrigger: {
-                trigger: section,
-                start: 'top top',
-                end: '40% top',
-                scrub: true,
-                // Faded out: pause its endless pulse so it stops ticking the compositor
-                onLeave: () => indicator.classList.add('is-paused'),
-                onEnterBack: () => indicator.classList.remove('is-paused')
-              }
-            });
-          }
-        } else {
-          // Section 2 & Section 3: Words appear progressively on scroll
-          gsap.set(split.words, {
-            opacity: 0,
-            yPercent: 100,
-            rotateX: -40,
-            scale: 0.92
-          });
-
-          gsap.to(split.words, {
-            opacity: 1,
-            yPercent: 0,
-            rotateX: 0,
-            scale: 1,
-            ease: 'power3.out',
-            stagger: 0.15,
-            scrollTrigger: {
-              trigger: section,
-              start: 'top 85%',
-              end: 'center 42%',
-              scrub: 1.1
-            }
-          });
-        }
+        });
       });
 
       // Global scroll progress from top of Section 1 to top of Section 4 (Trophy Box)
+      // (starts at Section 1: while the Hero covers the screen the 3D scene stays at its first frame)
       const smoothContent = document.getElementById('smooth-content');
+      const firstStory = document.querySelector('.section-1') || smoothContent;
       const trophySection = document.getElementById('trophy-section');
       if (smoothContent && trophySection) {
         ScrollTrigger.create({
-          trigger: smoothContent,
+          trigger: firstStory,
           start: 'top top',
           endTrigger: trophySection,
           end: 'top top',
@@ -597,7 +543,7 @@ class DexterBoxApp {
         // Smoke pan: keeps moving past the box and only ends once the backdrop has faded out
         // in the outro, so the user never sees it come to a stop
         ScrollTrigger.create({
-          trigger: smoothContent || document.body,
+          trigger: firstStory || document.body,
           start: 'top top',
           endTrigger: outroSection,
           end: 'top 10%',
@@ -1287,6 +1233,66 @@ class DexterBoxApp {
     Mat4.rotateX(s.modelMatrix, s.modelMatrix, (pose.tiltX + Math.cos(timeSec * 0.6) * 0.03) * flyT);
     Mat4.rotateY(s.modelMatrix, s.modelMatrix, pose.tiltY * flyT);
     Mat4.invert(s.invModelMatrix, s.modelMatrix);
+  }
+
+  /**
+   * Hero: load intro ("DEXTER" letters rise behind Dexter, he fades up, "KILLS" slides in front)
+   * and a scrubbed parallax as the section scrolls away, uncovering the 3D scene below.
+   */
+  _initHero(gsap, ScrollTrigger, SplitText) {
+    const hero = document.getElementById('hero-section');
+    if (!hero) return;
+    const back = hero.querySelector('.hero-word--back');
+    const front = hero.querySelector('.hero-word--front');
+    const figure = hero.querySelector('.hero-figure');
+    const bg = hero.querySelector('.hero-bg');
+    const indicator = hero.querySelector('.scroll-indicator');
+    const letters = back ? SplitText.create(back, { type: 'chars', charsClass: 'hero-char' }).chars : [];
+    if (back) back.classList.add('is-split');
+
+    gsap.set(hero, { visibility: 'visible' });
+    gsap.set(letters, { yPercent: 105, opacity: 0 });
+    gsap.set(figure, { opacity: 0, y: 60, scale: 1.04 });
+    gsap.set(front, { opacity: 0, y: 40, letterSpacing: '0.7em' });
+    gsap.set(bg, { scale: 1.12 });
+    if (indicator) gsap.set(indicator, { opacity: 0, y: 14 });
+
+    const intro = gsap.timeline({ delay: 0.1, paused: true });
+    intro
+      .to(bg, { scale: 1.04, duration: 2.6, ease: 'power2.out' }, 0)
+      .to(letters, { yPercent: 0, opacity: 1, duration: 1.3, stagger: 0.07, ease: 'expo.out' }, 0.15)
+      .to(figure, { opacity: 1, y: 0, scale: 1, duration: 1.6, ease: 'power3.out' }, 0.45)
+      .to(front, { opacity: 1, y: 0, letterSpacing: window.matchMedia('(max-aspect-ratio: 3/4)').matches ? '0.3em' : '0.38em', duration: 1.4, ease: 'expo.out' }, 0.95);
+    if (indicator) intro.to(indicator, { opacity: 0.72, y: 0, duration: 0.9, ease: 'power2.out' }, 1.5);
+    this.pageShown.then(() => intro.play());
+
+    // Scroll-away parallax: layers drift at different speeds for depth
+    const away = { trigger: hero, start: 'top top', end: 'bottom top', scrub: true };
+    // Share of the screen still covered by the Hero (clips the over-text slide layer)
+    const root = document.documentElement;
+    root.style.setProperty('--hero-cover', '1');
+    ScrollTrigger.create({
+      ...away,
+      onUpdate: (self) => root.style.setProperty('--hero-cover', (1 - self.progress).toFixed(4))
+    });
+    gsap.to(bg, { yPercent: 14, ease: 'none', scrollTrigger: away });
+    gsap.to('.hero-title', { yPercent: -18, ease: 'none', scrollTrigger: away });
+    gsap.to(figure, { yPercent: 6, ease: 'none', scrollTrigger: away });
+    // Darkens as it leaves, so the hand-off to the 3D scene reads as a fade into the night
+    gsap.to(hero, { '--hero-dim': 0.75, ease: 'none', scrollTrigger: away });
+
+    if (indicator) {
+      ScrollTrigger.create({
+        trigger: hero,
+        start: 'top top',
+        end: '30% top',
+        scrub: true,
+        animation: gsap.fromTo(indicator, { opacity: 0.72 }, { opacity: 0, y: 20, ease: 'none', immediateRender: false }),
+        // Faded out: pause its endless pulse so it stops ticking the compositor
+        onLeave: () => indicator.classList.add('is-paused'),
+        onEnterBack: () => indicator.classList.remove('is-paused')
+      });
+    }
   }
 
   /**
