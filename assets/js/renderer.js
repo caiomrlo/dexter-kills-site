@@ -127,6 +127,157 @@ class HalfResBlurPass extends Pass {
   }
 }
 
+const MAX_DOF_SLIDES = 7;
+const DOF_CORNERS = [
+  [-BOX_SPECS.slideWidth / 2, -BOX_SPECS.slideHeight / 2],
+  [BOX_SPECS.slideWidth / 2, -BOX_SPECS.slideHeight / 2],
+  [BOX_SPECS.slideWidth / 2, BOX_SPECS.slideHeight / 2],
+  [-BOX_SPECS.slideWidth / 2, BOX_SPECS.slideHeight / 2]
+];
+const _dofCorner = new THREE.Vector3();
+const _dofView = new THREE.Vector3();
+
+/**
+ * Depth of field for the free-floating slides (Sections 1-3): each slide gets its own blur amount.
+ * The frame is blurred twice (soft at half res, softer at quarter res), then each pixel blends
+ * sharp -> soft -> softer by the amount of the slide covering it. Slides are masked by their
+ * projected outline, padded so the blurred edge can spill out. Off when every slide is sharp.
+ */
+class SlideDepthBlurPass extends Pass {
+  constructor() {
+    super();
+    this.needsSwap = true;
+    this.scale = 1; // blur spread multiplier (drawing-buffer height / 900)
+    const opts = { type: THREE.HalfFloatType, depthBuffer: false };
+    this.rtHalfA = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtHalfB = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtHalfC = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtQuarterA = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.rtQuarterB = new THREE.WebGLRenderTarget(1, 1, opts);
+    this.copyMat = shaderMat(CopyShader);
+    this.hMat = shaderMat(HorizontalBlurShader);
+    this.vMat = shaderMat(VerticalBlurShader);
+
+    const quads = [];
+    for (let i = 0; i < MAX_DOF_SLIDES * 2; i++) quads.push(new THREE.Vector4());
+    const params = [];
+    for (let i = 0; i < MAX_DOF_SLIDES; i++) params.push(new THREE.Vector2());
+    this.compositeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tSharp: { value: null },
+        tSoft: { value: null },
+        tMedium: { value: null },
+        tSofter: { value: null },
+        uRes: { value: new THREE.Vector2(1, 1) },
+        uCount: { value: 0 },
+        uQuads: { value: quads },  // 2 per slide: corners (a, b) and (c, d) in buffer pixels, CCW
+        uParams: { value: params } // x = blur amount, y = edge padding in pixels
+      },
+      vertexShader: CopyShader.vertexShader,
+      fragmentShader: /* glsl */ `
+        #define MAX_SLIDES ${MAX_DOF_SLIDES}
+        uniform sampler2D tSharp;
+        uniform sampler2D tSoft;
+        uniform sampler2D tMedium;
+        uniform sampler2D tSofter;
+        uniform vec2 uRes;
+        uniform int uCount;
+        uniform vec4 uQuads[MAX_SLIDES * 2];
+        uniform vec2 uParams[MAX_SLIDES];
+        varying vec2 vUv;
+
+        float edgeDist(vec2 p, vec2 a, vec2 b) {
+          vec2 e = b - a;
+          return dot(p - a, normalize(vec2(e.y, -e.x)));
+        }
+
+        void main() {
+          vec2 p = vUv * uRes;
+          float amt = 0.0;
+          // Far -> near order, so a nearer slide wins where two overlap
+          for (int i = 0; i < MAX_SLIDES; i++) {
+            if (i >= uCount) break;
+            vec4 q0 = uQuads[i * 2];
+            vec4 q1 = uQuads[i * 2 + 1];
+            float d = edgeDist(p, q0.xy, q0.zw);
+            d = max(d, edgeDist(p, q0.zw, q1.xy));
+            d = max(d, edgeDist(p, q1.xy, q1.zw));
+            d = max(d, edgeDist(p, q1.zw, q0.xy));
+            float mask = 1.0 - smoothstep(0.0, uParams[i].y, d);
+            amt = mix(amt, uParams[i].x, mask);
+          }
+          vec4 sharp = texture2D(tSharp, vUv);
+          if (amt < 0.002) { gl_FragColor = sharp; return; }
+          // Short steps between close levels so no crisp outline ghosts over a wide haze
+          vec4 soft = texture2D(tSoft, vUv);
+          vec4 col;
+          if (amt < 0.15) {
+            col = mix(sharp, soft, amt / 0.15);
+          } else if (amt < 0.45) {
+            col = mix(soft, texture2D(tMedium, vUv), (amt - 0.15) / 0.3);
+          } else {
+            col = mix(texture2D(tMedium, vUv), texture2D(tSofter, vUv), (amt - 0.45) / 0.55);
+          }
+          gl_FragColor = col;
+        }
+      `,
+      depthTest: false,
+      depthWrite: false
+    });
+    this.quad = new FullScreenQuad(null);
+  }
+
+  setSize(width, height) {
+    const hw = Math.max(1, Math.floor(width / 2));
+    const hh = Math.max(1, Math.floor(height / 2));
+    const qw = Math.max(1, Math.floor(width / 4));
+    const qh = Math.max(1, Math.floor(height / 4));
+    this.rtHalfA.setSize(hw, hh);
+    this.rtHalfB.setSize(hw, hh);
+    this.rtHalfC.setSize(hw, hh);
+    this.rtQuarterA.setSize(qw, qh);
+    this.rtQuarterB.setSize(qw, qh);
+  }
+
+  _draw(renderer, mat, input, output) {
+    mat.uniforms.tDiffuse.value = input.texture;
+    this.quad.material = mat;
+    renderer.setRenderTarget(output);
+    this.quad.render(renderer);
+  }
+
+  // One separable gaussian round (a -> tmp -> out); px = tap spacing in full-resolution pixels
+  _blur(renderer, a, tmp, out, w, h, px) {
+    this.hMat.uniforms.h.value = px / w;
+    this._draw(renderer, this.hMat, a, tmp);
+    this.vMat.uniforms.v.value = px / h;
+    this._draw(renderer, this.vMat, tmp, out);
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    const w = Math.max(1, readBuffer.width);
+    const h = Math.max(1, readBuffer.height);
+    const k = this.scale;
+    // Sigma at 900 px tall: soft ~5 px, medium ~12 px, softer ~31 px (each built on the previous)
+    this._draw(renderer, this.copyMat, readBuffer, this.rtHalfA);
+    this._blur(renderer, this.rtHalfA, this.rtHalfB, this.rtHalfA, w, h, 2.5 * k);
+    this._blur(renderer, this.rtHalfA, this.rtHalfB, this.rtHalfC, w, h, 5.0 * k);
+    this._draw(renderer, this.copyMat, this.rtHalfC, this.rtQuarterA);
+    this._blur(renderer, this.rtQuarterA, this.rtQuarterB, this.rtQuarterA, w, h, 6.0 * k);
+    this._blur(renderer, this.rtQuarterA, this.rtQuarterB, this.rtQuarterA, w, h, 12.0 * k);
+
+    const u = this.compositeMat.uniforms;
+    u.tSharp.value = readBuffer.texture;
+    u.tSoft.value = this.rtHalfA.texture;
+    u.tMedium.value = this.rtHalfC.texture;
+    u.tSofter.value = this.rtQuarterA.texture;
+    u.uRes.value.set(w, h);
+    this.quad.material = this.compositeMat;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+}
+
 /**
  * The page's dark atmosphere: a red smoke photo that slides to the right as the page scrolls
  * (Section 1 -> the box), plus a vignette. Screen-blended over the frame inside
@@ -299,12 +450,14 @@ export class TrophyBoxRenderer {
     this.renderer.setRenderTarget(null);
 
     this.blurPass.enabled = true;
+    this.slideDofPass.enabled = true;
     this.focusPass.enabled = true;
     this.focusCamera.copy(cam, false);
     this.focusCamera.layers.set(FOCUS_LAYER);
     this.renderer.shadowMap.needsUpdate = true;
     this.composer.render();
     this.blurPass.enabled = false;
+    this.slideDofPass.enabled = false;
     this.focusPass.enabled = false;
     probe.glassMesh.material = probe.fullMats;
 
@@ -994,6 +1147,11 @@ export class TrophyBoxRenderer {
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
 
+    // Depth of field on the floating slides (some sharp, some soft), gone by the time they reach the box
+    this.slideDofPass = new SlideDepthBlurPass();
+    this.slideDofPass.enabled = false;
+    this.composer.addPass(this.slideDofPass);
+
     // Depth of field for the kill reveal: blur the scene, then draw the focused slide sharp on top.
     // Two separable gaussian passes at different spreads give a soft, ghost-free blur.
     this.blurPass = new HalfResBlurPass();
@@ -1058,7 +1216,7 @@ export class TrophyBoxRenderer {
    * When it matches the last drawn frame, the frame is skipped and the canvas keeps its image.
    */
   _frameSignature(sceneState, boxVisible) {
-    const sig = this._sig || (this._sig = new Float32Array(32 + 16 * 2 + BOX_SPECS.numSlides * 20));
+    const sig = this._sig || (this._sig = new Float32Array(32 + 16 * 2 + BOX_SPECS.numSlides * 21));
     let k = 0;
     const put = (v) => { sig[k++] = v; };
     const putM = (m) => { for (let i = 0; i < 16; i++) sig[k++] = m[i]; };
@@ -1082,6 +1240,7 @@ export class TrophyBoxRenderer {
       put(s.selectProgress);
       put(s.focusProgress || 0);
       put(s.focusDetached ? 1 : 0);
+      put(s.depthBlur || 0);
     }
     return k;
   }
@@ -1098,6 +1257,64 @@ export class TrophyBoxRenderer {
       this._lastSigLen = len;
     }
     return changed;
+  }
+
+  /**
+   * Feeds the floating-slide depth of field: each blurred slide's outline on screen
+   * (its 4 projected corners) and blur amount, ordered far -> near.
+   */
+  _updateSlideDof(sceneState) {
+    const pass = this.slideDofPass;
+    if (!pass) return;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const scale = h / 900;
+    // How far the softest blur spills past the slide outline
+    const softestPx = 31 * scale;
+
+    const list = this._dofList || (this._dofList = []);
+    list.length = 0;
+    for (let i = 0; i < BOX_SPECS.numSlides; i++) {
+      const s = sceneState.slides[i];
+      const amt = s.depthBlur || 0;
+      const g = this.slideObjects[i].group;
+      if (amt < 0.01 || !g.visible) continue;
+      const pts = [];
+      let behind = false;
+      for (const [x, y] of DOF_CORNERS) {
+        _dofCorner.set(x, y, 0).applyMatrix4(g.matrixWorld);
+        _dofView.copy(_dofCorner).applyMatrix4(this.camera.matrixWorldInverse);
+        if (_dofView.z > -0.05) behind = true;
+        _dofCorner.project(this.camera);
+        pts.push((_dofCorner.x * 0.5 + 0.5) * w, (_dofCorner.y * 0.5 + 0.5) * h);
+      }
+      if (behind) continue;
+      // The shader expects counter-clockwise corners
+      let area = 0;
+      for (let c = 0; c < 4; c++) {
+        const n = (c + 1) % 4;
+        area += pts[c * 2] * pts[n * 2 + 1] - pts[n * 2] * pts[c * 2 + 1];
+      }
+      if (area < 0) pts.splice(0, 8, pts[6], pts[7], pts[4], pts[5], pts[2], pts[3], pts[0], pts[1]);
+      const dx = s.worldPos[0] - sceneState.cameraPos[0];
+      const dy = s.worldPos[1] - sceneState.cameraPos[1];
+      const dz = s.worldPos[2] - sceneState.cameraPos[2];
+      list.push({ pts, amt, distSq: dx * dx + dy * dy + dz * dz });
+    }
+
+    pass.enabled = list.length > 0;
+    if (!pass.enabled) return;
+    list.sort(byDistanceDesc);
+    pass.scale = scale;
+    const u = pass.compositeMat.uniforms;
+    const n = Math.min(MAX_DOF_SLIDES, list.length);
+    u.uCount.value = n;
+    for (let i = 0; i < n; i++) {
+      const { pts, amt } = list[i];
+      u.uQuads.value[i * 2].set(pts[0], pts[1], pts[2], pts[3]);
+      u.uQuads.value[i * 2 + 1].set(pts[4], pts[5], pts[6], pts[7]);
+      u.uParams.value[i].set(amt, 2.0 + softestPx * amt * 2.2);
+    }
   }
 
   render(sceneState) {
@@ -1308,6 +1525,8 @@ export class TrophyBoxRenderer {
         this.focusCamera.layers.set(FOCUS_LAYER);
       }
     }
+
+    this._updateSlideDof(sceneState);
 
     // 6. Page atmosphere (fades out on the closed-box stage)
     if (this.outputPass) {

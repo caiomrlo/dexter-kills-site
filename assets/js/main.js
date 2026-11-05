@@ -143,6 +143,11 @@ const FLOATING_SLIDE_CONFIGS = [
 
 const smoothstep01 = (t) => t * t * (3.0 - 2.0 * t);
 
+// Depth of field for the floating slides: slides near this camera distance stay sharp,
+// closer and farther ones get softer (blur grows with |1/focus - 1/depth|, like a real lens)
+const FLOAT_FOCUS_DEPTH = 6.3;
+const FLOAT_BLUR_STRENGTH = 16.0;
+
 class DexterBoxApp {
   constructor() {
     this.canvas = document.getElementById('webgpu-canvas');
@@ -239,6 +244,7 @@ class DexterBoxApp {
         focusLinear: 0.0,   // kill reveal: 0 = in its slot, 1 = held up in front of the camera
         focusProgress: 0.0, // eased focusLinear (read by the renderer)
         focusDetached: false,
+        depthBlur: 0.0,     // 0 = sharp, 1 = most out of focus (floating slides only)
         worldPos: [0, 0.34, slotZ],
         modelMatrix: Mat4.create(),
         invModelMatrix: Mat4.create()
@@ -1086,6 +1092,7 @@ class DexterBoxApp {
 
       if (!s.isFloating) {
         // Stationary slide already inside the Trophy Box
+        s.depthBlur = 0.0;
         s.worldPos[0] = slotPosX;
         s.worldPos[1] = slotPosY;
         s.worldPos[2] = slotPosZ;
@@ -1136,6 +1143,10 @@ class DexterBoxApp {
       const halfW = halfH * aspect;
       const rx = curNdcX * halfW;
       const uy = curNdcY * halfH;
+
+      // Out-of-focus amount: eases off while scrolling down and is gone by the time the slide is over the box
+      const lensBlur = Math.min(1.0, Math.abs(1.0 / FLOAT_FOCUS_DEPTH - 1.0 / curDepth) * FLOAT_BLUR_STRENGTH);
+      s.depthBlur = s.focusLinear > 0.0 ? 0.0 : lensBlur * (1.0 - 0.55 * travelSmooth) * rotWeight * rotWeight;
 
       const floatPosX = this.camera.pos[0] + camForward[0] * curDepth + camRight[0] * rx + camUp[0] * uy;
       const floatPosY = this.camera.pos[1] + camForward[1] * curDepth + camRight[1] * rx + camUp[1] * uy;
