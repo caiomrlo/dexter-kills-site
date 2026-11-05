@@ -173,7 +173,7 @@ class DexterBoxApp {
     this.claspHintEl = document.querySelector('.clasp-hint');
     this.killsHeadlineWrap = document.querySelector('.kills-headline-wrap');
     this.killsHeadlineFade = -1;
-    this.finaleProgress = 0; // 0..1 while Section 6 slides up over the box
+    this.finaleProgress = 0; // 0..1 while Section 6 (kill count) slides up over the box
     // Page atmosphere strength (drawn by the renderer's last pass; fades out on the closed-box stage)
     this.backdropFx = { opacity: 1 };
     // Camera basis reused every frame (world space)
@@ -610,17 +610,40 @@ class DexterBoxApp {
         this._initKillsStage(gsap, outroSection);
       }
 
-      // Section 6 (finale): slides up over the box like a curtain while the scene drifts up behind it
-      const finaleSection = document.getElementById('finale-section');
-      if (finaleSection) {
-        const finaleScroll = { trigger: finaleSection, start: 'top bottom', end: 'top top', scrub: true };
+      // Section 6 (kill count): the first dark section, slides up over the box like a curtain
+      // while the scene drifts up behind it
+      const countSection = document.getElementById('count-section');
+      if (countSection) {
+        const curtainScroll = { trigger: countSection, start: 'top bottom', end: 'top top', scrub: true };
         ScrollTrigger.create({
-          ...finaleScroll,
+          ...curtainScroll,
           onUpdate: (self) => {
             this.finaleProgress = self.progress;
           }
         });
-        gsap.to(['#webgpu-canvas', '.kills-stage'], { yPercent: -28, ease: 'none', scrollTrigger: finaleScroll });
+        gsap.to(['#webgpu-canvas', '.kills-stage'], { yPercent: -28, ease: 'none', scrollTrigger: curtainScroll });
+
+        const number = countSection.querySelector('.count-number');
+        if (number) {
+          this._initKillCount(gsap, countSection, number);
+          // Number settles in as it arrives
+          gsap.fromTo(number,
+            { scale: 1.12, opacity: 0.2 },
+            {
+              scale: 1, opacity: 1, ease: 'power2.out',
+              scrollTrigger: { trigger: countSection, start: 'top 85%', end: 'top 15%', scrub: 1.1 }
+            });
+        }
+        gsap.from(countSection.querySelectorAll('.count-eyebrow, .count-label, .count-copy'), {
+          y: 28, opacity: 0, stagger: 0.12, ease: 'power2.out',
+          scrollTrigger: { trigger: countSection, start: 'top 55%', end: 'top 5%', scrub: 1.1 }
+        });
+      }
+
+      // Section 7 (finale)
+      const finaleSection = document.getElementById('finale-section');
+      if (finaleSection) {
+        const finaleScroll = { trigger: finaleSection, start: 'top bottom', end: 'top top', scrub: true };
         // "VÍTIMA" behind the headline: surfaces slowly from below, a bit slower than the page
         const ghost = finaleSection.querySelector('.finale-ghost');
         if (ghost) {
@@ -1264,6 +1287,84 @@ class DexterBoxApp {
     Mat4.rotateX(s.modelMatrix, s.modelMatrix, (pose.tiltX + Math.cos(timeSec * 0.6) * 0.03) * flyT);
     Mat4.rotateY(s.modelMatrix, s.modelMatrix, pose.tiltY * flyT);
     Mat4.invert(s.invModelMatrix, s.modelMatrix);
+  }
+
+  /**
+   * Section 6 "168": the photo inside the digits stays almost fixed on screen while the
+   * number scrolls past (the digits act as a window), and the number counts up from 0.
+   */
+  _initKillCount(gsap, section, number) {
+    const TOTAL = 168;
+    // How much the photo follows the page: 0 = fixed to the screen, 1 = glued to the number
+    const FOLLOW = 0.3;
+    const IMAGE_RATIO = 4 / 3; // kill-count.webp is 1600x1200
+    const MAX_ZOOM = 1.9; // photo width at most this many times the number's width
+
+    let imgW = 0;
+    let imgH = 0;
+    let range = 0; // how far the number travels while fully on screen, from its centered spot
+
+    const measure = () => {
+      // Lock the box to the width of the final "168", so it doesn't jump while counting
+      const shown = number.textContent;
+      number.style.width = '';
+      number.textContent = String(TOTAL);
+      number.style.width = `${number.offsetWidth}px`;
+      number.textContent = shown;
+
+      const vh = window.innerHeight;
+      const boxH = number.offsetHeight;
+      range = Math.max(0, (vh - boxH) / 2);
+      // Tall enough to cover the box across the whole drift, wide enough to keep the 4:3 shape
+      imgH = boxH + 2 * range * (1 - FOLLOW);
+      // Tall phone screens would zoom the face in too far: cap the zoom and shorten the drift instead
+      const maxH = (number.offsetWidth * MAX_ZOOM) / IMAGE_RATIO;
+      if (imgH > maxH) {
+        imgH = Math.max(boxH, maxH);
+        range = (imgH - boxH) / (2 * (1 - FOLLOW));
+      }
+      imgW = imgH * IMAGE_RATIO;
+      number.style.backgroundSize = `${imgW}px ${imgH}px`;
+    };
+
+    const place = () => {
+      const rect = number.getBoundingClientRect();
+      const vh = window.innerHeight;
+      // Distance of the number's center from the screen center, limited to the on-screen part
+      const offset = Math.max(-range, Math.min(range, rect.top + rect.height / 2 - vh / 2));
+      // The photo moves only FOLLOW of the number's motion, so inside the digits it drifts down
+      const y = (number.offsetHeight - imgH) / 2 - offset * (1 - FOLLOW);
+      const x = (number.offsetWidth - imgW) / 2;
+      number.style.backgroundPosition = `${x}px ${y}px`;
+    };
+
+    measure();
+    place();
+    ScrollTrigger.addEventListener('refresh', () => { measure(); place(); });
+    ScrollTrigger.create({
+      trigger: section,
+      start: 'top bottom',
+      end: 'bottom top',
+      onUpdate: place
+    });
+
+    // Count-up: 0 -> 168 over 6s, slow start, faster in the middle, slow finish
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+    const counter = { value: 0 };
+    const render = () => {
+      number.textContent = String(Math.round(counter.value));
+      place(); // width changes with the digits, keep the photo centered
+    };
+    render();
+    ScrollTrigger.create({
+      trigger: number,
+      start: '5% bottom', // as soon as 5% of the number is on screen
+      once: true,
+      onEnter: () => {
+        gsap.to(counter, { value: TOTAL, duration: 6, ease: 'power2.inOut', onUpdate: render });
+      }
+    });
   }
 
   /**
