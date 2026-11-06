@@ -1268,22 +1268,7 @@ class DexterBoxApp {
     if (indicator) intro.to(indicator, { opacity: 0.72, y: 0, duration: 0.9, ease: 'power2.out' }, 1.5);
     this.pageShown.then(() => intro.play());
 
-    // Scroll-away parallax: layers drift at different speeds for depth
-    const away = { trigger: hero, start: 'top top', end: 'bottom top', scrub: true };
-    // Share of the screen still covered by the Hero (clips the over-text slide layer)
-    const root = document.documentElement;
-    root.style.setProperty('--hero-cover', '1');
-    ScrollTrigger.create({
-      ...away,
-      onUpdate: (self) => root.style.setProperty('--hero-cover', (1 - self.progress).toFixed(4))
-    });
-    gsap.to(bg, { yPercent: 14, ease: 'none', scrollTrigger: away });
-    // Words move one by one (a transform on their wrapper would push "KILLS" under Dexter)
-    const lift = () => -window.innerHeight * 0.18;
-    gsap.to([back, front], { y: lift, ease: 'none', scrollTrigger: { ...away, invalidateOnRefresh: true } });
-    gsap.to(figure, { yPercent: 6, ease: 'none', scrollTrigger: away });
-    // Darkens as it leaves, so the hand-off to the 3D scene reads as a fade into the night
-    gsap.to(hero, { '--hero-dim': 0.75, ease: 'none', scrollTrigger: away });
+    this._initHeroShrink(gsap, ScrollTrigger, hero);
 
     this._initHeroPointer(gsap, ScrollTrigger, hero, bg, back);
 
@@ -1299,6 +1284,89 @@ class DexterBoxApp {
         onEnterBack: () => indicator.classList.remove('is-paused')
       });
     }
+  }
+
+  /**
+   * Hero scroll-away: the section is pinned over Section 1 and closes into a centered card.
+   * Each edge closes on its own timing and easing (not a uniform scale), while the content
+   * inside scales down to fit the final card. Once the card is about half the screen it
+   * lifts off the top. No pin spacing is added, so every later section keeps its timing.
+   */
+  _initHeroShrink(gsap, ScrollTrigger, hero) {
+    const frame = hero.querySelector('.hero-frame');
+    const inner = hero.querySelector('.hero-inner');
+    if (!frame || !inner) return;
+
+    const root = document.documentElement;
+    const END_SCALE = 0.56;
+    const END_INSET = ((1 - END_SCALE) / 2) * 100; // % per edge where the card ends up
+    // Edge insets in %, corner radius in px, lift in % of the hero height
+    const st = { t: 0, r: 0, b: 0, l: 0, rad: 0, lift: 0 };
+
+    const render = () => {
+      const W = hero.offsetWidth;
+      const H = hero.offsetHeight;
+      const rad = Math.min(st.rad, (W * (100 - st.l - st.r)) / 200, (H * (100 - st.t - st.b)) / 200);
+      frame.style.clipPath = `inset(${st.t}% ${st.r}% ${st.b}% ${st.l}% round ${rad}px)`;
+      frame.style.transform = `translate3d(0, ${-st.lift}%, 0)`;
+      // Content follows the card: scaled to cover it and centered on it, so no bare edge ever shows
+      const boxW = 100 - st.l - st.r;
+      const boxH = 100 - st.t - st.b;
+      const scale = Math.max(boxW, boxH) / 100;
+      const dx = (((st.l - st.r) / 2) * W) / 100;
+      const dy = (((st.t - st.b) / 2) * H) / 100;
+      inner.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+
+      // Cut the card's shape out of the over-text slide layer, so slides never draw over the Hero
+      // Pinned, so its top sits at 0 for the whole animation (its rect jitters under the smoother)
+      const top = -(st.lift / 100) * H;
+      const x0 = (st.l / 100) * W;
+      const x1 = W - (st.r / 100) * W;
+      const y0 = top + (st.t / 100) * H;
+      const y1 = top + H - (st.b / 100) * H;
+      let hole;
+      if (y1 <= 0) hole = 'none';
+      else if (st.t + st.r + st.b + st.l + st.lift < 0.01) hole = 'inset(100% 0 0 0)';
+      else {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const f = (n) => n.toFixed(1);
+        hole =
+          `path(evenodd, "M0 0H${vw}V${vh}H0Z` +
+          `M${f(x0 + rad)} ${f(y0)}H${f(x1 - rad)}A${f(rad)} ${f(rad)} 0 0 1 ${f(x1)} ${f(y0 + rad)}` +
+          `V${f(y1 - rad)}A${f(rad)} ${f(rad)} 0 0 1 ${f(x1 - rad)} ${f(y1)}` +
+          `H${f(x0 + rad)}A${f(rad)} ${f(rad)} 0 0 1 ${f(x0)} ${f(y1 - rad)}` +
+          `V${f(y0 + rad)}A${f(rad)} ${f(rad)} 0 0 1 ${f(x0 + rad)} ${f(y0)}Z")`;
+      }
+      root.style.setProperty('--hero-hole', hole);
+    };
+
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      onUpdate: render,
+      scrollTrigger: {
+        trigger: hero,
+        start: 'top top',
+        end: '+=100%',
+        pin: true,
+        pinSpacing: false,
+        scrub: 0.6,
+        invalidateOnRefresh: true,
+        onRefresh: render
+      }
+    });
+
+    // Phase 1 (0 → 0.64): the card stays centered (opposite edges move together), but width and
+    // height close on different timings and curves, so its shape changes as it shrinks
+    tl.to(st, { l: END_INSET, r: END_INSET, duration: 0.54, ease: 'expo.inOut' }, 0)
+      .to(st, { t: END_INSET, b: END_INSET, duration: 0.5, ease: 'power2.inOut' }, 0.14)
+      .to(st, { rad: 36, duration: 0.3, ease: 'power2.out' }, 0.02)
+      // Phase 2 (0.68 → 1): the card lifts off the top, slightly shrinking and dimming
+      .to(st, { lift: 100 - END_INSET + 4, duration: 0.32, ease: 'power3.in' }, 0.68)
+      .to(st, { t: END_INSET + 2, r: END_INSET + 2, b: END_INSET + 2, l: END_INSET + 2, duration: 0.32, ease: 'power2.in' }, 0.68)
+      .to(hero, { '--hero-dim': 0.45, duration: 0.32, ease: 'power1.in' }, 0.68);
+
+    render();
   }
 
   /**
