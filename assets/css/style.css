@@ -110,11 +110,6 @@ html, body {
   text-shadow: none;
 }
 
-/* Its headline is held centered behind the Hero (main.js), which lifts it above the section's top */
-.section-1 {
-  overflow: visible;
-}
-
 .section-2 .story-headline {
   max-width: 15ch;
 }
@@ -283,8 +278,8 @@ html, body {
   height: 100vh;
   z-index: 6; /* after #smooth-wrapper in DOM order, so it paints over the headlines */
   pointer-events: none;
-  /* Hidden where the Hero card covers the screen (--hero-hole set in main.js) */
-  clip-path: var(--hero-hole, none);
+  /* Hidden behind the Hero: only shows below its bottom edge (--hero-cover set in main.js) */
+  clip-path: inset(calc(var(--hero-cover, 0) * 100%) 0 0 0);
 }
 
 /* Dark atmospheric backdrop: dimmed red smoke photo + vignette (fallback; WebGL pans it with scroll) */
@@ -1605,37 +1600,19 @@ html, body {
 /* ------------------------------------------------------------------
    Hero: Iron Lake x Nova York photo, Dexter between "DEXTER" (behind)
    and "KILLS" (in front). Opaque, so it covers the fixed 3D canvas
-   until it scrolls away. On scroll it is pinned and shrinks into a
-   card over Section 1, then lifts off the top (main.js).
+   until it scrolls away.
    ------------------------------------------------------------------ */
 .hero-section {
   --fig-h: min(94vh, 150vw); /* Dexter's height; the headline is placed from it */
   --hero-dim: 0;
   position: relative;
-  z-index: 10; /* stays above Section 1 while that scrolls in underneath */
   width: 100%;
   height: 100vh;
   min-height: 520px;
-  visibility: hidden; /* shown by main.js once the intro is set up */
-}
-
-/* The card: clipped (clip-path) and lifted (transform) by main.js */
-.hero-frame {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
   isolation: isolate;
   background: #04060a;
-  will-change: clip-path, transform;
-}
-
-/* The content inside the card: scaled down by main.js as the card closes */
-.hero-inner {
-  position: absolute;
-  inset: 0;
-  isolation: isolate;
-  transform-origin: 50% 50%;
-  will-change: transform;
+  visibility: hidden; /* shown by main.js once the intro is set up */
 }
 
 @supports (height: 100svh) {
@@ -1646,7 +1623,7 @@ html, body {
 }
 
 /* Fade to black while scrolling away (--hero-dim tweened in main.js) */
-.hero-frame::after {
+.hero-section::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1658,7 +1635,7 @@ html, body {
 
 .hero-bg {
   position: absolute;
-  inset: -8% -3%; /* bleed on every side for the intro zoom */
+  inset: -8% -3%; /* bleed on every side for the scroll and mouse parallax */
   z-index: 0;
   background: url('../img/hero/hero-bg.webp') center 40% / cover no-repeat;
   filter: brightness(0.66) contrast(1.12) saturate(0.8);
@@ -1831,3 +1808,14 @@ html, body {
   .hero-grain { animation: none; }
 }
 
+/* Soft hand-off from the Hero's black bottom edge into the smoke behind Section 1 */
+.section-1::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32vh;
+  background: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, 0.6) 40%, transparent 100%);
+  pointer-events: none;
+}
