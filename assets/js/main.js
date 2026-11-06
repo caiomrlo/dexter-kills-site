@@ -1285,8 +1285,6 @@ class DexterBoxApp {
     // Darkens as it leaves, so the hand-off to the 3D scene reads as a fade into the night
     gsap.to(hero, { '--hero-dim': 0.75, ease: 'none', scrollTrigger: away });
 
-    this._initHeroPointer(gsap, ScrollTrigger, hero, bg, back);
-
     if (indicator) {
       ScrollTrigger.create({
         trigger: hero,
@@ -1299,55 +1297,6 @@ class DexterBoxApp {
         onEnterBack: () => indicator.classList.remove('is-paused')
       });
     }
-  }
-
-  /**
-   * Hero mouse parallax: the background and "DEXTER" drift with the cursor at different strengths.
-   * Uses the CSS `translate` property, so it stacks with the GSAP transforms (intro + scroll).
-   */
-  _initHeroPointer(gsap, ScrollTrigger, hero, bg, back) {
-    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!finePointer || reduced) return;
-
-    // Max shift in px at the screen edges (negative = moves against the cursor)
-    const layers = [
-      { el: bg, x: -18, y: -12 },
-      { el: back, x: -34, y: -18 }
-    ].filter((l) => l.el);
-    const target = { x: 0, y: 0 };
-    const now = { x: 0, y: 0 };
-    let visible = true;
-
-    window.addEventListener(
-      'pointermove',
-      (e) => {
-        target.x = (e.clientX / window.innerWidth) * 2 - 1; // -1 .. 1
-        target.y = (e.clientY / window.innerHeight) * 2 - 1;
-      },
-      { passive: true }
-    );
-    document.documentElement.addEventListener('pointerleave', () => {
-      target.x = 0;
-      target.y = 0;
-    });
-    ScrollTrigger.create({
-      trigger: hero,
-      start: 'top bottom',
-      end: 'bottom top',
-      onToggle: (self) => (visible = self.isActive)
-    });
-
-    gsap.ticker.add((time, deltaMs) => {
-      if (!visible) return;
-      const k = 1 - Math.exp(-3.2 * (deltaMs / 1000)); // soft, laggy follow
-      now.x += (target.x - now.x) * k;
-      now.y += (target.y - now.y) * k;
-      if (Math.abs(target.x - now.x) < 1e-4 && Math.abs(target.y - now.y) < 1e-4) return;
-      for (const l of layers) {
-        l.el.style.translate = `${(now.x * l.x).toFixed(2)}px ${(now.y * l.y).toFixed(2)}px`;
-      }
-    });
   }
 
   /**

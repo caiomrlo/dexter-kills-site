@@ -1635,7 +1635,7 @@ html, body {
 
 .hero-bg {
   position: absolute;
-  inset: -8% -3%; /* bleed on every side for the scroll and mouse parallax */
+  inset: -8% 0; /* vertical bleed for the scroll parallax */
   z-index: 0;
   background: url('../img/hero/hero-bg.webp') center 40% / cover no-repeat;
   filter: brightness(0.66) contrast(1.12) saturate(0.8);
