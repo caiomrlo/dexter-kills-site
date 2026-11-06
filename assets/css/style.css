@@ -110,6 +110,11 @@ html, body {
   text-shadow: none;
 }
 
+/* Its headline is held centered behind the Hero (main.js), which lifts it above the section's top */
+.section-1 {
+  overflow: visible;
+}
+
 .section-2 .story-headline {
   max-width: 15ch;
 }
@@ -1653,7 +1658,7 @@ html, body {
 
 .hero-bg {
   position: absolute;
-  inset: -8% -3%; /* bleed on every side for the scroll and mouse parallax */
+  inset: -8% -3%; /* bleed on every side for the intro zoom */
   z-index: 0;
   background: url('../img/hero/hero-bg.webp') center 40% / cover no-repeat;
   filter: brightness(0.66) contrast(1.12) saturate(0.8);

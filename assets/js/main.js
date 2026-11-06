@@ -460,6 +460,12 @@ class DexterBoxApp {
       headlines.forEach((headline) => {
         const section = headline.closest('.story-section');
 
+        // Section 1 is already in place behind the Hero card: no entrance, it waits there centered
+        if (section && section.classList.contains('section-1')) {
+          gsap.set(headline, { visibility: 'visible' });
+          return;
+        }
+
         const split = SplitText.create(headline, {
           type: 'words',
           wordsClass: 'split-word'
@@ -1269,8 +1275,7 @@ class DexterBoxApp {
     this.pageShown.then(() => intro.play());
 
     this._initHeroShrink(gsap, ScrollTrigger, hero);
-
-    this._initHeroPointer(gsap, ScrollTrigger, hero, bg, back);
+    this._holdFirstHeadline(gsap, hero);
 
     if (indicator) {
       ScrollTrigger.create({
@@ -1370,52 +1375,23 @@ class DexterBoxApp {
   }
 
   /**
-   * Hero mouse parallax: the background and "DEXTER" drift with the cursor at different strengths.
-   * Uses the CSS `translate` property, so it stacks with the GSAP transforms (intro + scroll).
+   * While the Hero is pinned, Section 1 scrolls up underneath it. Its headline is counter-moved
+   * so it sits still in the middle of the screen, ready when the Hero card lifts away.
    */
-  _initHeroPointer(gsap, ScrollTrigger, hero, bg, back) {
-    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!finePointer || reduced) return;
-
-    // Max shift in px at the screen edges (negative = moves against the cursor)
-    const layers = [
-      { el: bg, x: -18, y: -12 },
-      { el: back, x: -34, y: -18 }
-    ].filter((l) => l.el);
-    const target = { x: 0, y: 0 };
-    const now = { x: 0, y: 0 };
-    let visible = true;
-
-    window.addEventListener(
-      'pointermove',
-      (e) => {
-        target.x = (e.clientX / window.innerWidth) * 2 - 1; // -1 .. 1
-        target.y = (e.clientY / window.innerHeight) * 2 - 1;
-      },
-      { passive: true }
-    );
-    document.documentElement.addEventListener('pointerleave', () => {
-      target.x = 0;
-      target.y = 0;
-    });
-    ScrollTrigger.create({
-      trigger: hero,
-      start: 'top bottom',
-      end: 'bottom top',
-      onToggle: (self) => (visible = self.isActive)
-    });
-
-    gsap.ticker.add((time, deltaMs) => {
-      if (!visible) return;
-      const k = 1 - Math.exp(-3.2 * (deltaMs / 1000)); // soft, laggy follow
-      now.x += (target.x - now.x) * k;
-      now.y += (target.y - now.y) * k;
-      if (Math.abs(target.x - now.x) < 1e-4 && Math.abs(target.y - now.y) < 1e-4) return;
-      for (const l of layers) {
-        l.el.style.translate = `${(now.x * l.x).toFixed(2)}px ${(now.y * l.y).toFixed(2)}px`;
+  _holdFirstHeadline(gsap, hero) {
+    const inner = document.querySelector('.section-1 .section-inner');
+    if (!inner) return;
+    gsap.fromTo(
+      inner,
+      { y: () => -hero.offsetHeight },
+      {
+        y: 0,
+        ease: 'none',
+        immediateRender: true,
+        // absolute positions: a trigger on the pinned Hero would be offset by its own pin
+        scrollTrigger: { start: 0, end: () => hero.offsetHeight, scrub: true, invalidateOnRefresh: true }
       }
-    });
+    );
   }
 
   /**
