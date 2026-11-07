@@ -180,8 +180,6 @@ class DexterBoxApp {
     this.smoothOutro = 0.0;
     this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
     this.claspHintEl = document.querySelector('.clasp-hint');
-    this.killsHeadlineWrap = document.querySelector('.kills-headline-wrap');
-    this.killsHeadlineFade = -1;
     this.finaleProgress = 0; // 0..1 while Section 6 (kill count) slides up over the box
     // Page atmosphere strength (drawn by the renderer's last pass; fades out on the closed-box stage)
     this.backdropFx = { opacity: 1 };
@@ -1668,23 +1666,13 @@ class DexterBoxApp {
   }
 
   /**
-   * Closed-box stage: the red haze fades in with a slow parallax drift, and the
-   * "DEXTER KILLS" title grows out of the dark behind the box as the outro scrolls.
+   * Closed-box stage: the red haze fades in with a slow parallax drift as the outro scrolls.
    */
   _initKillsStage(gsap, outroSection) {
     const bg = document.querySelector('.kills-bg');
-    const headline = document.querySelector('.kills-headline');
-    if (!bg || !headline) return;
+    if (!bg) return;
 
     gsap.set(bg, { opacity: 0, yPercent: 6, scale: 1.08 });
-    // Starts stretched wide instead of wide letter-spacing: animating letter-spacing re-lays out
-    // and repaints the giant gradient text every frame, scaleX stays on the compositor
-    gsap.set(headline, {
-      opacity: 0,
-      y: () => innerHeight * 0.32,
-      scaleX: 1.45,
-      ...(QUALITY.headlineBlur ? { filter: 'blur(18px)' } : {})
-    });
 
     const scroll = { trigger: outroSection, start: 'top 90%', end: 'bottom bottom', scrub: 1.4 };
 
@@ -1696,29 +1684,9 @@ class DexterBoxApp {
       // The page-wide grey haze would wash out the red background, so it bows out here
       .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0)
       .to(this.backdropFx, { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
-
-    // Headline: hidden below at full size, then rises out of the dark into place.
-    // It lands with the camera's final push-in on the box, just after the clasp hint appears (top 10%).
-    gsap.timeline({ scrollTrigger: { ...scroll, start: 'top 40%', end: 'top 5%', invalidateOnRefresh: true } }).to(headline, {
-      opacity: 0.86,
-      y: 0,
-      scaleX: 1,
-      ...(QUALITY.headlineBlur ? { filter: 'blur(0px)' } : {}),
-      ease: 'power2.out',
-      duration: 1
-    });
   }
 
   _updateHints() {
-    // Kill reveal: the title steps back so the dossier reads cleanly
-    if (this.killsHeadlineWrap) {
-      const fade = Math.round((1 - Math.min(1, this.revealProgress * 2)) * 100) / 100;
-      if (fade !== this.killsHeadlineFade) {
-        this.killsHeadlineFade = fade;
-        this.killsHeadlineWrap.style.opacity = String(fade);
-      }
-    }
-
     // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
     if (this.claspHintEl) {
       const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);

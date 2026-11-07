@@ -22,7 +22,7 @@ export const QUALITY = isLow
       bloom: false,
       physicalMaterials: false, // clearcoat wood/brass -> standard
       shadowMapSize: 1024,
-      headlineBlur: false,      // "Dexter Kills" entrance without the animated blur filter
+      headlineBlur: false,      // story headlines enter without the animated blur filter
       smoothTouch: false        // native touch scrolling, no smoothing lag
     }
   : {
