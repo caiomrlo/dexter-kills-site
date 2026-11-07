@@ -530,12 +530,8 @@ html::-webkit-scrollbar-thumb:hover {
   translate: 0 -50%;
   margin: 0;
   text-align: right;
-  text-transform: uppercase;
-  font-size: clamp(3.2rem, 8.4vw, 10.5rem);
-  line-height: 0.9;
-  letter-spacing: -0.01em;
+  font-size: clamp(3.4rem, 8.4vw, 10rem);
   max-width: 9ch;
-  perspective: 1000px;
 }
 
 @media (max-aspect-ratio: 4/5) {

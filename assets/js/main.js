@@ -1544,13 +1544,10 @@ class DexterBoxApp {
       .set({}, {}, 352);
   }
 
-  /**
-   * Section 6 "168": the photo inside the digits stays almost fixed on screen while the
-   * number scrolls past (the digits act as a window), and the number counts up from 0.
-   */
   // Footer: the looping video starts as a 4:5 frame a little off the left edge and grows on scroll
-  // until it covers the screen. Each edge has its own easing: the right one races out, the left one
-  // trails behind. When it is almost full screen, "QUEM VAI SER A PRÓXIMA?" rises in on the right.
+  // from the moment it enters the screen until it covers it. Each edge has its own easing: the right
+  // one races out, the left one trails behind. Near the end "Quem vai ser a próxima?" fades in on
+  // the right with the same entrance as the story headlines.
   _initFinale(gsap, ScrollTrigger, SplitText, section) {
     const pin = section.querySelector('.finale-pin');
     const media = section.querySelector('.finale-media');
@@ -1622,18 +1619,20 @@ class DexterBoxApp {
     apply();
     ScrollTrigger.addEventListener('refresh', () => { measure(); apply(); });
 
+    // Starts as soon as the footer peeks in at the bottom, ends with the page
     const tl = gsap.timeline({
       defaults: { ease: 'none' },
-      scrollTrigger: { trigger: section, start: 'top 15%', end: 'bottom bottom', scrub: 0.8 }
+      scrollTrigger: { trigger: section, start: 'top bottom', end: 'bottom bottom', scrub: 0.8 }
     });
-    tl.to(state, { grow: 1, duration: 0.72, onUpdate: apply }, 0);
-    if (shade) tl.to(shade, { opacity: 1, duration: 0.3 }, 0.42);
+    tl.to(state, { grow: 1, duration: 0.78, onUpdate: apply }, 0);
+    if (shade) tl.to(shade, { opacity: 1, duration: 0.3 }, 0.4);
 
     if (headline) {
       const words = SplitText.create(headline, { type: 'words', wordsClass: 'split-word' }).words;
       gsap.set(headline, { visibility: 'visible' });
-      gsap.set(words, { opacity: 0, yPercent: 100, rotateX: -40, scale: 0.92 });
-      tl.to(words, { opacity: 1, yPercent: 0, rotateX: 0, scale: 1, ease: 'power3.out', duration: 0.24, stagger: 0.035 }, 0.58);
+      gsap.set(words, { ...STORY_WORD.waiting, transformOrigin: '50% 50%' });
+      // Same entrance as "Esta é a noite."; it is done just before the video fills the screen (~0.5)
+      tl.to(words, { ...STORY_WORD.shown, ease: 'sine.out', stagger: 0.03, duration: 0.22 }, 0.12);
     }
     tl.to({}, { duration: 0.08 }); // short rest on the full frame before the page ends
 
@@ -1660,6 +1659,10 @@ class DexterBoxApp {
     }
   }
 
+  /**
+   * Section 6 "168": the photo inside the digits stays almost fixed on screen while the
+   * number scrolls past (the digits act as a window), and the number counts up from 0.
+   */
   _initKillCount(gsap, section, number) {
     const TOTAL = 168;
     // How much the photo follows the page: 0 = fixed to the screen, 1 = glued to the number
