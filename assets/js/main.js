@@ -464,42 +464,6 @@ class DexterBoxApp {
     const setupSplits = () => {
       this._initHero(gsap, ScrollTrigger, SplitText);
 
-      const headlines = document.querySelectorAll('[data-split-words]');
-
-      headlines.forEach((headline) => {
-        const section = headline.closest('.story-section');
-
-        const split = SplitText.create(headline, {
-          type: 'words',
-          wordsClass: 'split-word'
-        });
-
-        gsap.set(headline, { visibility: 'visible' });
-
-        // Finale headline: words rise in on scroll
-        gsap.set(split.words, {
-          opacity: 0,
-          yPercent: 100,
-          rotateX: -40,
-          scale: 0.92
-        });
-
-        gsap.to(split.words, {
-          opacity: 1,
-          yPercent: 0,
-          rotateX: 0,
-          scale: 1,
-          ease: 'power3.out',
-          stagger: 0.15,
-          scrollTrigger: {
-            trigger: section,
-            start: 'top 85%',
-            end: 'center 42%',
-            scrub: 1.1
-          }
-        });
-      });
-
       // Global scroll progress from top of Section 1 to top of Section 4 (Trophy Box)
       // (starts at Section 1: while the Hero covers the screen the 3D scene stays at its first frame)
       const smoothContent = document.getElementById('smooth-content');
@@ -616,18 +580,9 @@ class DexterBoxApp {
         });
       }
 
-      // Section 7 (finale)
+      // Section 7 (finale / footer): video frame grows to full screen, then the final call
       const finaleSection = document.getElementById('finale-section');
-      if (finaleSection) {
-        const finaleScroll = { trigger: finaleSection, start: 'top bottom', end: 'top top', scrub: true };
-        // "VÍTIMA" behind the headline: surfaces slowly from below, a bit slower than the page
-        const ghost = finaleSection.querySelector('.finale-ghost');
-        if (ghost) {
-          gsap.fromTo(ghost,
-            { yPercent: 18, opacity: 0, scale: 1.06 },
-            { yPercent: -4, opacity: 1, scale: 1, ease: 'power1.out', scrollTrigger: { ...finaleScroll, scrub: 1.2 } });
-        }
-      }
+      if (finaleSection) this._initFinale(gsap, ScrollTrigger, SplitText, finaleSection);
 
       ScrollTrigger.refresh();
     };
@@ -1593,6 +1548,118 @@ class DexterBoxApp {
    * Section 6 "168": the photo inside the digits stays almost fixed on screen while the
    * number scrolls past (the digits act as a window), and the number counts up from 0.
    */
+  // Footer: the looping video starts as a 4:5 frame a little off the left edge and grows on scroll
+  // until it covers the screen. Each edge has its own easing: the right one races out, the left one
+  // trails behind. When it is almost full screen, "QUEM VAI SER A PRÓXIMA?" rises in on the right.
+  _initFinale(gsap, ScrollTrigger, SplitText, section) {
+    const pin = section.querySelector('.finale-pin');
+    const media = section.querySelector('.finale-media');
+    const video = section.querySelector('.finale-video');
+    const shade = section.querySelector('.finale-shade');
+    const headline = section.querySelector('[data-finale-words]');
+    if (!pin || !media) return;
+
+    // Phones hold the stage with CSS sticky (.native-scroll); elsewhere GSAP pins it
+    if (!this.introNative) {
+      ScrollTrigger.create({ trigger: section, start: 'top top', end: 'bottom bottom', pin, pinSpacing: false });
+    }
+
+    // Starting frame: 4:5, a small gap from the left edge, vertically centered.
+    // The video starts scaled to fill that frame (Dexter in view) and zooms out to cover the screen.
+    const RATIO = 2036 / 1018; // video aspect
+    const SUBJECT = 0.3; // Dexter's horizontal spot in the shot (0..1)
+    let box = null;
+    const measure = () => {
+      const vw = pin.clientWidth;
+      const vh = pin.clientHeight;
+      const gap = Math.max(16, vw * 0.04);
+      let h = vh * 0.78;
+      let w = h * 0.8;
+      const maxW = vw * (vw < vh ? 0.64 : 0.42);
+      if (w > maxW) { w = maxW; h = w / 0.8; }
+      const top = (vh - h) / 2;
+      // Where object-fit: cover draws the video at full screen
+      const ch = Math.max(vh, vw / RATIO);
+      const cw = ch * RATIO;
+      if (video) video.style.cssText = ''; // read the CSS framing (object-position) before sizing it
+      const posX = video ? (parseFloat(getComputedStyle(video).objectPosition) || 0) / 100 : 0;
+      const cx = (vw - cw) * posX;
+      const cy = (vh - ch) / 2;
+      // The element gets the whole picture's size, so scaling it down never crops the shot
+      if (video) Object.assign(video.style, { left: `${cx}px`, top: `${cy}px`, width: `${cw}px`, height: `${ch}px` });
+      // Where it should sit inside the starting frame (covering it, subject centered)
+      const th = Math.max(h, w / RATIO);
+      const tw = th * RATIO;
+      const tx = Math.min(gap, Math.max(gap + w - tw, gap + w / 2 - SUBJECT * tw));
+      const ty = top + (h - th) / 2;
+      const s0 = th / ch;
+      box = { vw, vh, gap, w, h, top, s0, x0: tx - cx, y0: ty - cy };
+    };
+
+    const easeRight = gsap.parseEase('power3.out');
+    const easeLeft = gsap.parseEase('power2.inOut');
+    const easeV = gsap.parseEase('power2.inOut');
+    const state = { grow: 0 };
+    const apply = () => {
+      if (!box) measure();
+      const p = state.grow;
+      const r = easeRight(Math.min(1, p / 0.8)); // right edge: fastest, done first
+      const v = easeV(Math.min(1, p / 0.9));
+      const l = easeLeft(p); // left edge: slowest
+      const top = box.top * (1 - v);
+      const right = (box.vw - box.gap - box.w) * (1 - r);
+      const left = box.gap * (1 - l);
+      const radius = 6 * (1 - l);
+      media.style.clipPath = `inset(${top}px ${right}px ${top}px ${left}px round ${radius}px)`;
+      // The video zooms out with the right edge, so it always fills the opening frame
+      if (video) {
+        const k = 1 - r;
+        const sc = 1 + (box.s0 - 1) * k;
+        video.style.transform = `translate(${box.x0 * k}px, ${box.y0 * k}px) scale(${sc})`;
+      }
+    };
+    measure();
+    apply();
+    ScrollTrigger.addEventListener('refresh', () => { measure(); apply(); });
+
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: { trigger: section, start: 'top 15%', end: 'bottom bottom', scrub: 0.8 }
+    });
+    tl.to(state, { grow: 1, duration: 0.72, onUpdate: apply }, 0);
+    if (shade) tl.to(shade, { opacity: 1, duration: 0.3 }, 0.42);
+
+    if (headline) {
+      const words = SplitText.create(headline, { type: 'words', wordsClass: 'split-word' }).words;
+      gsap.set(headline, { visibility: 'visible' });
+      gsap.set(words, { opacity: 0, yPercent: 100, rotateX: -40, scale: 0.92 });
+      tl.to(words, { opacity: 1, yPercent: 0, rotateX: 0, scale: 1, ease: 'power3.out', duration: 0.24, stagger: 0.035 }, 0.58);
+    }
+    tl.to({}, { duration: 0.08 }); // short rest on the full frame before the page ends
+
+    // Muted looping video: load it only as the footer gets close, play only while it is on screen
+    if (video) {
+      video.muted = true;
+      const play = () => { const p = video.play(); if (p && p.catch) p.catch(() => {}); };
+      if ('IntersectionObserver' in window) {
+        const io = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              if (!video.getAttribute('src') && video.dataset.src) video.src = video.dataset.src;
+              play();
+            } else if (!video.paused) {
+              video.pause();
+            }
+          });
+        }, { rootMargin: '60% 0px' });
+        io.observe(section);
+      } else {
+        if (video.dataset.src) video.src = video.dataset.src;
+        play();
+      }
+    }
+  }
+
   _initKillCount(gsap, section, number) {
     const TOTAL = 168;
     // How much the photo follows the page: 0 = fixed to the screen, 1 = glued to the number

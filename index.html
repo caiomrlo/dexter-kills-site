@@ -186,17 +186,22 @@
         </div>
       </section>
 
-      <!-- Seção 7 / rodapé: chamada final + créditos -->
-      <footer id="finale-section" class="story-section finale-section site-footer" data-section="7">
-        <span class="finale-ghost" aria-hidden="true">Vítima</span>
-        <div class="section-inner">
-          <h2 class="story-headline finale-headline" data-split-words>
+      <!-- Seção 7 / rodapé: vídeo em loop que começa num quadro 4:5 à esquerda e cresce até cobrir a tela
+           no scroll; a chamada final aparece à direita quando ele está quase em tela cheia (main.js) -->
+      <footer id="finale-section" class="finale-section site-footer" data-section="7">
+        <div class="finale-pin">
+          <div class="finale-media" aria-hidden="true">
+            <video class="finale-video" data-src="assets/video/finale-loop.mp4" poster="assets/video/finale-poster.webp"
+              muted loop playsinline autoplay preload="metadata" disablepictureinpicture disableremoteplayback></video>
+            <div class="finale-shade"></div>
+          </div>
+          <h2 class="story-headline finale-headline" data-finale-words>
             Quem vai ser a <span class="accent">próxima?</span>
           </h2>
-        </div>
-        <div class="footer-credits">
-          <span class="footer-drop" aria-hidden="true"></span>
-          <p>Feito por <a class="footer-author" href="https://github.com/caiomrlo" target="_blank" rel="noopener noreferrer">caiomrlo</a></p>
+          <div class="footer-credits">
+            <span class="footer-drop" aria-hidden="true"></span>
+            <p>Feito por <a class="footer-author" href="https://github.com/caiomrlo" target="_blank" rel="noopener noreferrer">caiomrlo</a></p>
+          </div>
         </div>
       </footer>
     </div>

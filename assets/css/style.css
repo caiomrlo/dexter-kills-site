@@ -463,24 +463,100 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--text-muted);
 }
 
-/* Section 7: the page footer — final call + credits, same solid dark */
+/* Section 7: the page footer. A looping video starts as a 4:5 frame near the left edge and grows
+   to cover the screen on scroll (main.js clips it); the final call shows up on the right. */
 .finale-section {
-  overflow: visible;
+  position: relative;
+  width: 100%;
+  height: 260vh; /* scroll room for the growth; the stage below stays on screen meanwhile */
   background: var(--after-box-bg);
+}
+
+.finale-pin {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Phones scroll natively: the stage is held by CSS sticky (elsewhere GSAP pins it) */
+.native-scroll .finale-pin {
+  position: sticky;
+  top: 0;
+}
+
+.finale-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #050404;
+  /* Starting frame until main.js takes over: 4:5, near the left edge, vertically centered */
+  clip-path: inset(11vh calc(100% - 4vw - 62vh) 11vh 4vw round 6px);
+  will-change: clip-path;
+}
+
+.finale-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 0% 50%; /* Dexter is on the left of the shot */
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+@media (max-aspect-ratio: 4/5) {
+  .finale-video {
+    object-position: 16% 50%;
+  }
+}
+
+/* Darkens the right side and the bottom so the headline and credits read over the video */
+.finale-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(270deg, rgba(5, 4, 4, 0.72) 0%, rgba(5, 4, 4, 0.35) 38%, transparent 62%),
+    linear-gradient(0deg, rgba(5, 4, 4, 0.8) 0%, transparent 26%);
+  opacity: 0;
+}
+
+.finale-headline {
+  position: absolute;
+  z-index: 2;
+  right: clamp(20px, 5vw, 96px);
+  top: 50%;
+  translate: 0 -50%;
+  margin: 0;
+  text-align: right;
+  text-transform: uppercase;
+  font-size: clamp(3.2rem, 8.4vw, 10.5rem);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  max-width: 9ch;
+  perspective: 1000px;
+}
+
+@media (max-aspect-ratio: 4/5) {
+  .finale-headline {
+    top: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    translate: none;
+    font-size: clamp(3rem, 15vw, 6rem);
+  }
 }
 
 .footer-credits {
   position: absolute;
   z-index: 2;
-  left: 0;
   right: 0;
   bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 14px;
-  padding: 22px clamp(16px, 4vw, 48px) calc(22px + env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(232, 225, 214, 0.08);
+  padding: 22px clamp(20px, 5vw, 96px) calc(26px + env(safe-area-inset-bottom));
   font-family: 'Barlow Condensed', var(--font-sans);
   font-weight: 700;
   font-size: 0.85rem;
@@ -511,42 +587,6 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--accent-blood-bright);
   background-size: 100% 1px;
   outline: none;
-}
-
-/* Giant "VÍTIMA" sunk in the dark behind the headline: faint fill, fades out towards the bottom */
-.finale-ghost {
-  position: absolute;
-  z-index: 1;
-  left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  font-family: 'Barlow Condensed', var(--font-display);
-  font-weight: 400;
-  font-style: italic;
-  text-transform: uppercase;
-  font-size: clamp(9rem, 36vw, 44rem);
-  line-height: 0.8;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  padding-right: 0.08em;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(150, 14, 22, 0.34) 0%, rgba(90, 8, 14, 0.18) 45%, rgba(40, 4, 8, 0) 85%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  -webkit-mask-image: linear-gradient(180deg, #000 20%, rgba(0, 0, 0, 0.55) 55%, transparent 90%);
-  mask-image: linear-gradient(180deg, #000 20%, rgba(0, 0, 0, 0.55) 55%, transparent 90%);
-  filter: blur(1.5px);
-  will-change: transform, opacity;
-}
-
-.finale-headline {
-  text-transform: uppercase;
-  font-size: clamp(3.4rem, 11vw, 13rem);
-  line-height: 0.9;
-  letter-spacing: -0.01em;
-  max-width: 11ch;
 }
 
 /* Section 5: Outro (closed box centered; scroll room only) */
