@@ -131,11 +131,35 @@ html, body {
   text-shadow: none;
 }
 
-.section-2 .story-headline {
+/* Fixed stage for the Section 1-3 headlines: all three share the screen center */
+.story-stage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh; /* same box as the pinned Section 1, so the hand-over is seamless */
+  display: grid;
+  place-items: center;
+  padding: clamp(24px, 6vw, 96px);
+  perspective: 1000px;
+  pointer-events: none;
+}
+
+.story-stage > .story-headline {
+  grid-area: 1 / 1;
+}
+
+.story-headline--wide {
   max-width: 15ch;
 }
 
+/* Taller than a screen: scroll room for each headline to rest before the next swap (main.js) */
+.section-2 {
+  min-height: 140vh;
+}
+
 .section-3 {
+  min-height: 170vh;
   margin-bottom: 85vh;
 }
 

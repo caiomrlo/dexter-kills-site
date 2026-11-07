@@ -163,23 +163,9 @@
         </div>
       </div>
 
-      <!-- Seção 2 -->
-      <section class="story-section section-2" data-section="2">
-        <div class="section-inner">
-          <h2 class="story-headline" data-split-words>
-            E vai acontecer de novo e de <span class="accent">novo.</span>
-          </h2>
-        </div>
-      </section>
-
-      <!-- Seção 3 -->
-      <section class="story-section section-3" data-section="3">
-        <div class="section-inner">
-          <h2 class="story-headline" data-split-words>
-            Tem que <span class="accent">acontecer.</span>
-          </h2>
-        </div>
-      </section>
+      <!-- Seções 2 e 3: só dão o espaço de scroll; as headlines ficam fixas no centro (.story-stage) -->
+      <section class="story-section section-2" data-section="2"></section>
+      <section class="story-section section-3" data-section="3"></section>
 
       <!-- Seção 4: Caixa de Troféus 3D -->
       <section id="trophy-section" class="story-section viewer-section section-4" data-section="4">
@@ -211,6 +197,20 @@
           <p>Feito por <a class="footer-author" href="https://github.com/caiomrlo" target="_blank" rel="noopener noreferrer">caiomrlo</a></p>
         </div>
       </footer>
+    </div>
+
+    <!-- Headlines das Seções 1-3: paradas no centro da tela; uma some e a próxima aparece no mesmo lugar.
+         A 1 é uma cópia da headline da Seção 1, que assume quando a transição KILLS termina (main.js) -->
+    <div class="story-stage">
+      <h2 class="story-headline" data-stage-line aria-hidden="true">
+        Esta é a <span class="accent">noite.</span>
+      </h2>
+      <h2 class="story-headline story-headline--wide" data-stage-line>
+        E vai acontecer de novo e de <span class="accent">novo.</span>
+      </h2>
+      <h2 class="story-headline" data-stage-line>
+        Tem que <span class="accent">acontecer.</span>
+      </h2>
     </div>
   </div>
 

@@ -14,6 +14,15 @@ import { VictimList, LIST_ICON } from './victim-list.js';
 import { initBloodCursor } from './blood-cursor.js';
 import { QUALITY } from './quality.js';
 
+// Looks of a story headline word (Sections 1-3): waiting to appear, on screen, faded away.
+// The words never move: they only fade, blur and scale a touch, in place.
+const STORY_BLUR = QUALITY.headlineBlur;
+const STORY_WORD = {
+  waiting: { autoAlpha: 0, scale: 1.05, filter: STORY_BLUR ? 'blur(10px)' : 'none' },
+  shown: { autoAlpha: 1, scale: 1, filter: STORY_BLUR ? 'blur(0px)' : 'none' },
+  gone: { autoAlpha: 0, scale: 0.97, filter: STORY_BLUR ? 'blur(8px)' : 'none' }
+};
+
 // Adaptive quality (low tier): if frames keep coming slower than this, drop the resolution a step
 const ADAPT_WINDOW_MS = 2000;
 const ADAPT_SLOW_FRAME_MS = 1000 / 45;
@@ -467,7 +476,7 @@ class DexterBoxApp {
 
         gsap.set(headline, { visibility: 'visible' });
 
-        // Sections 1-3: words appear progressively on scroll (the Hero owns the load intro)
+        // Finale headline: words rise in on scroll
         gsap.set(split.words, {
           opacity: 0,
           yPercent: 100,
@@ -499,6 +508,8 @@ class DexterBoxApp {
       const introStack = document.querySelector('.intro-stack') || undefined;
       const introPin = introStack && !this.introNative ? introStack.querySelector('.intro-pin') : undefined;
       const firstStart = () => (introStack && this.introNative ? `top+=${this.introPinDistance()} top` : 'top top');
+      this._initStoryStage(gsap, ScrollTrigger, SplitText, { firstStory, introPin, firstStart });
+
       const trophySection = document.getElementById('trophy-section');
       if (smoothContent && trophySection) {
         ScrollTrigger.create({
@@ -1312,7 +1323,7 @@ class DexterBoxApp {
     if (headline1) {
       words1 = SplitText.create(headline1, { type: 'words', wordsClass: 'split-word' }).words;
       gsap.set(headline1, { visibility: 'visible' });
-      gsap.set(words1, { opacity: 0, yPercent: 100, rotateX: -40, scale: 0.92 });
+      gsap.set(words1, { ...STORY_WORD.waiting, transformOrigin: '50% 50%' });
     }
 
     // Copies the DOM word's glyph positions into the SVG, and finds the middle of the
@@ -1467,12 +1478,79 @@ class DexterBoxApp {
     if (inner1) tl.fromTo(inner1, { scale: 1.18 }, { scale: 1, duration: ZOOM_END, ease: 'sine.out' }, 0);
     if (canvas) tl.fromTo(canvas, { scale: 1.1 }, { scale: 1, duration: ZOOM_END, ease: 'sine.out' }, 0);
     if (words1.length) {
-      tl.to(words1, { opacity: 1, yPercent: 0, rotateX: 0, scale: 1, ease: 'power3.out', stagger: 0.05, duration: 0.3 }, 0.38);
+      // Same entrance as the other story headlines (see _initStoryStage)
+      tl.to(words1, { ...STORY_WORD.shown, ease: 'sine.out', stagger: 0.05, duration: 0.34 }, 0.36);
     }
     if (indicator) {
       tl.fromTo(indicator, { opacity: 0.72 }, { opacity: 0, y: 20, duration: 0.06, immediateRender: false }, 0);
     }
     tl.to({}, { duration: 1 - ZOOM_END }, ZOOM_END);
+  }
+
+  /**
+   * Sections 1-3 headlines: they never move. Each one stays at the screen center and,
+   * on scroll, its words fade away in place while the next line's words appear over it.
+   * Line 1 is a copy of the Section 1 headline that takes over when the KILLS intro ends.
+   */
+  _initStoryStage(gsap, ScrollTrigger, SplitText, { firstStory, introPin, firstStart }) {
+    const lines = [...document.querySelectorAll('.story-stage [data-stage-line]')];
+    const triggers = [document.querySelector('.section-2'), document.querySelector('.section-3')];
+    if (lines.length !== 3 || triggers.some((t) => !t)) return;
+
+    const words = lines.map((line) => {
+      const w = SplitText.create(line, { type: 'words', wordsClass: 'split-word' }).words;
+      gsap.set(line, { visibility: 'visible' });
+      gsap.set(w, { transformOrigin: '50% 50%' });
+      if (w.length && line !== lines[0]) gsap.set(w, { autoAlpha: 0 });
+      return w;
+    });
+    // Line 1 starts in its final look (hidden as a whole until the hand-over); 2 and 3 start hidden
+    gsap.set(lines[0], { autoAlpha: 0 });
+
+    // Hand-over from the Section 1 headline (it scrolls away with the intro) to the fixed copy
+    const sectionLine = firstStory.querySelector('[data-intro-words]');
+    const handOverEnd = () => (this.introNative ? `top+=${this.introPinDistance() + 1} top` : 'top+=1 top');
+    const handOver = gsap.timeline({
+      scrollTrigger: {
+        trigger: firstStory,
+        pinnedContainer: introPin,
+        start: firstStart,
+        end: handOverEnd,
+        scrub: true,
+        invalidateOnRefresh: true
+      }
+    });
+    handOver.fromTo(lines[0], { autoAlpha: 0 }, { autoAlpha: 1, duration: 1, ease: 'none', immediateRender: false }, 0);
+    if (sectionLine) {
+      handOver.fromTo(sectionLine, { autoAlpha: 1 }, { autoAlpha: 0, duration: 1, ease: 'none', immediateRender: false }, 0);
+    }
+
+    // Explicit from/to states: lines 2 and 3 are animated twice (in, then out)
+    const { shown, gone, waiting } = STORY_WORD;
+    const step = { duration: 40, stagger: 6 };
+    const hide = { ...gone, ...step, ease: 'sine.in' };
+    const show = { ...shown, ...step, ease: 'sine.out' };
+
+    // One scrubbed timeline for every swap, so a fast scroll never leaves two lines fighting.
+    // Times are in screen heights of scroll (x100), from the moment Section 2's top reaches the
+    // middle of the screen. Each line gets a long still moment before the next swap (Section 2
+    // and 3 heights in style.css give the room for it before the trophy box).
+    gsap.timeline({
+      defaults: { immediateRender: false },
+      scrollTrigger: {
+        trigger: triggers[0],
+        start: 'top 50%',
+        end: () => `+=${window.innerHeight * 3.52}`,
+        scrub: 1.6,
+        invalidateOnRefresh: true
+      }
+    })
+      .fromTo(words[0], shown, hide, 0)            // 1 -> 2
+      .fromTo(words[1], waiting, show, 28)
+      .fromTo(words[1], shown, hide, 170)          // 2 -> 3
+      .fromTo(words[2], waiting, show, 198)
+      .fromTo(words[2], shown, hide, 300)          // 3 fades before the trophy box
+      .set({}, {}, 352);
   }
 
   /**
