@@ -1908,3 +1908,36 @@ html, body {
   .hero-grain { animation: none; }
 }
 
+/* Low quality tier (phones): the Hero keeps its look with cheaper layers. No animated
+   blended grain over the whole screen, no silhouette mask, no big blurred shadows (the red
+   "KILLS" copy is scaled up ~100x during the zoom), and plain overlays instead of filters. */
+.quality-low .hero-grain {
+  display: none;
+}
+
+.quality-low .hero-bg {
+  filter: none;
+}
+
+.quality-low .hero-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36); /* stands in for the brightness filter */
+}
+
+.quality-low .hero-figure::after {
+  display: none;
+}
+
+/* A bit darker and greyer to make up for the missing color grade layer */
+.quality-low .hero-figure .hero-dexter {
+  filter: brightness(0.62) contrast(1.1) saturate(0.6);
+}
+
+.quality-low .hero-word--back,
+.quality-low .hero-word--front,
+.quality-low .hero-mask-red {
+  filter: none;
+}
+

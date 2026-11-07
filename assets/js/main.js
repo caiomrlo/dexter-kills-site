@@ -1425,6 +1425,7 @@ class DexterBoxApp {
     };
 
     let state = '';
+    this.heroCovers = true; // until the scroll moves past the top (setState below)
     const setState = (p) => {
       const next = p <= 0.0005 ? 'idle' : p < ZOOM_END ? 'zooming' : 'done';
       if (next === state) return;
@@ -1433,6 +1434,7 @@ class DexterBoxApp {
         measure();
       }
       state = next;
+      this.heroCovers = next === 'idle';
       stack.classList.toggle('is-zooming', next === 'zooming');
       stack.classList.toggle('is-zoomed', next === 'done');
       // The slide copy drawn over the headlines stays hidden while the Hero is on screen
@@ -1674,6 +1676,14 @@ class DexterBoxApp {
     const boxVisible = this.smoothScrollProgress > 0.62;
 
     this._updateHints();
+
+    // The opaque Hero hides the whole canvas until the KILLS window opens: skip the GPU work
+    // (after a few frames, so the scene is already drawn when the window starts to open)
+    if (this.heroCovers && this.framesDrawn > 3) {
+      this.rafId = requestAnimationFrame((t) => this._loop(t));
+      return;
+    }
+    this.framesDrawn = (this.framesDrawn || 0) + 1;
 
     this.renderer.render({
       viewMatrix: this.viewMatrix,
