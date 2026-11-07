@@ -529,20 +529,22 @@ export class TrophyBoxRenderer {
       return out;
     };
 
+    // Tinted and less reflective than the brass so the box reads darker and moodier
     this.woodMat = new Lacquered(physicalOnly({
+      color: 0xb3aaa6,
       map: woodMaps.map,
       normalMap: woodMaps.normalMap,
       normalScale: new THREE.Vector2(0.24, 0.24),
       roughnessMap: woodMaps.roughnessMap,
-      roughness: 0.26,
+      roughness: 0.30,
       metalness: 0.02,
-      clearcoat: 0.45,
-      clearcoatRoughness: 0.20,
+      clearcoat: 0.32,
+      clearcoatRoughness: 0.24,
       clearcoatNormalMap: woodMaps.normalMap,
       clearcoatNormalScale: new THREE.Vector2(0.12, 0.12),
       ior: 1.48,
-      reflectivity: 0.65,
-      envMapIntensity: 1.10
+      reflectivity: 0.50,
+      envMapIntensity: 0.78
     }));
 
     // 2. Brushed Antique Brass Hardware
