@@ -1637,10 +1637,14 @@ html, body {
   visibility: hidden; /* shown by main.js once the intro is set up */
 }
 
+/* Phones: the Hero is as tall as the screen with the browser bar hidden (lvh), so no gap opens
+   at the bottom when the bar slides away; with the bar shown it just covers the lower edge.
+   Sizes stay on svh so nothing jumps when the bar toggles. --bar-h = the bar's height. */
 @supports (height: 100svh) {
   .hero-section {
     --fig-h: min(94svh, 150vw);
-    height: 100svh;
+    --bar-h: calc(100lvh - 100svh);
+    height: 100lvh;
   }
 }
 
@@ -1805,7 +1809,7 @@ html, body {
 }
 
 @supports (height: 100svh) {
-  .hero-mask-red { height: 100svh; }
+  .hero-mask-red { height: 100lvh; }
 }
 
 .intro-stack.is-zooming .hero-mask-red {
@@ -1879,6 +1883,8 @@ html, body {
 
 .hero-section .scroll-indicator {
   z-index: 5;
+  /* kept above a browser bar at the bottom of the screen */
+  bottom: calc(clamp(24px, 4.5vh, 48px) + var(--bar-h, 0px));
 }
 
 /* Portrait phones: smaller figure, "DEXTER" sits on top of his head instead of behind his face */
