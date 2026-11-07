@@ -335,7 +335,10 @@ html, body {
 .count-section {
   overflow: visible;
   background: var(--after-box-bg);
-  padding-top: clamp(64px, 12vh, 140px);
+  /* Extra room after the box before the curtain arrives */
+  margin-top: 35vh;
+  /* Tall black band above the number to separate it from the box */
+  padding-top: clamp(220px, 45vh, 520px);
   padding-bottom: clamp(64px, 12vh, 140px);
 }
 

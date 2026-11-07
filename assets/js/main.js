@@ -608,7 +608,7 @@ class DexterBoxApp {
               scrollTrigger: { trigger: countSection, start: 'top 85%', end: 'top 15%', scrub: 1.1 }
             });
         }
-        gsap.from(countSection.querySelectorAll('.count-eyebrow, .count-label, .count-copy'), {
+        gsap.from(countSection.querySelectorAll('.count-label, .count-copy'), {
           y: 28, opacity: 0, stagger: 0.12, ease: 'power2.out',
           scrollTrigger: { trigger: countSection, start: 'top 55%', end: 'top 5%', scrub: 1.1 }
         });
