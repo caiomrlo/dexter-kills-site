@@ -45,7 +45,13 @@
       .page-loader__drop, .page-loader__bar::after { animation: none; }
     }
   </style>
-  <script>document.documentElement.classList.add('is-loading');</script>
+  <script>
+    document.documentElement.classList.add('is-loading');
+    // Always start at the Hero on load/reload instead of restoring the old scroll spot
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.scrollTo(0, 0);
+    window.addEventListener('beforeunload', () => window.scrollTo(0, 0));
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />

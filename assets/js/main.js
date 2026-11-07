@@ -458,6 +458,8 @@ class DexterBoxApp {
       smoothTouch: QUALITY.smoothTouch,
       ignoreMobileResize: true
     });
+    // Start at the Hero even if the browser restored a scroll position
+    this.smoother.scrollTop(0);
 
     const setupSplits = () => {
       this._initHero(gsap, ScrollTrigger, SplitText);
