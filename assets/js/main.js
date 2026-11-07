@@ -1596,11 +1596,12 @@ class DexterBoxApp {
     // How much the photo follows the page: 0 = fixed to the screen, 1 = glued to the number
     const FOLLOW = 0.3;
     const IMAGE_RATIO = 4 / 3; // kill-count.webp is 1600x1200
-    const MAX_ZOOM = 1.9; // photo width at most this many times the number's width
+    const MAX_ZOOM = 2.3; // photo width at most this many times the number's width
 
     let imgW = 0;
     let imgH = 0;
-    let range = 0; // how far the number travels while fully on screen, from its centered spot
+    let range = 0; // how far the number's center travels from screen center while any of it is visible
+    let drift = 1 - FOLLOW; // share of the number's motion the photo lags behind
 
     const measure = () => {
       // Lock the box to the width of the final "168", so it doesn't jump while counting
@@ -1612,14 +1613,17 @@ class DexterBoxApp {
 
       const vh = window.innerHeight;
       const boxH = number.offsetHeight;
-      range = Math.max(0, (vh - boxH) / 2);
+      // From the first pixel entering at the bottom to the last leaving at the top
+      range = (vh + boxH) / 2;
+      drift = 1 - FOLLOW;
       // Tall enough to cover the box across the whole drift, wide enough to keep the 4:3 shape
-      imgH = boxH + 2 * range * (1 - FOLLOW);
-      // Tall phone screens would zoom the face in too far: cap the zoom and shorten the drift instead
+      imgH = boxH + 2 * range * drift;
+      // Avoid zooming the face in too far: cap the zoom and soften the parallax instead,
+      // so it still runs over the whole time the number is on screen
       const maxH = (number.offsetWidth * MAX_ZOOM) / IMAGE_RATIO;
       if (imgH > maxH) {
         imgH = Math.max(boxH, maxH);
-        range = (imgH - boxH) / (2 * (1 - FOLLOW));
+        drift = (imgH - boxH) / (2 * range);
       }
       imgW = imgH * IMAGE_RATIO;
       number.style.backgroundSize = `${imgW}px ${imgH}px`;
@@ -1628,10 +1632,10 @@ class DexterBoxApp {
     const place = () => {
       const rect = number.getBoundingClientRect();
       const vh = window.innerHeight;
-      // Distance of the number's center from the screen center, limited to the on-screen part
+      // Distance of the number's center from the screen center (clamped only past fully off screen)
       const offset = Math.max(-range, Math.min(range, rect.top + rect.height / 2 - vh / 2));
-      // The photo moves only FOLLOW of the number's motion, so inside the digits it drifts down
-      const y = (number.offsetHeight - imgH) / 2 - offset * (1 - FOLLOW);
+      // The photo lags behind the number's motion, so inside the digits it drifts the whole way
+      const y = (number.offsetHeight - imgH) / 2 - offset * drift;
       const x = (number.offsetWidth - imgW) / 2;
       number.style.backgroundPosition = `${x}px ${y}px`;
     };
