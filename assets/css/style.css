@@ -1889,8 +1889,12 @@ html, body {
   @supports (height: 100svh) {
     .hero-section { --fig-h: min(80svh, 150vw); }
   }
+  .hero-bg {
+    background-image: url('../img/hero/hero-bg-mobile.webp');
+    background-position: center 30%;
+  }
   .hero-word--back {
-    top: calc(100% - var(--fig-h) * 0.93);
+    top: calc(100% - var(--fig-h) * 1.0);
     font-size: 30vw;
   }
   .hero-word--front {
