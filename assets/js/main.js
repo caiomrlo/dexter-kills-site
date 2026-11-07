@@ -1722,7 +1722,8 @@ class DexterBoxApp {
     // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
     if (this.claspHintEl) {
       const shut = Math.max(0, Math.min(1, (this.outroProgress - 0.9) / 0.1)) * Math.max(0, 1 - this.openTimeline * 8);
-      const visible = this.outroUnlocked ? 0 : shut * Math.max(0, 1 - this.finaleProgress * 3);
+      // Gone by the time the kill-count curtain covers the box (clicks stop there too)
+      const visible = this.outroUnlocked ? 0 : shut * Math.max(0, 1 - this.finaleProgress * 5);
       if (visible > 0.01) {
         const m = this.claspMatrix;
         const x = m[12], y = m[13] - 0.05, z = m[14];
@@ -1730,8 +1731,10 @@ class DexterBoxApp {
         const cw = v[3] * x + v[7] * y + v[11] * z + v[15];
         const nx = (v[0] * x + v[4] * y + v[8] * z + v[12]) / cw;
         const ny = (v[1] * x + v[5] * y + v[9] * z + v[13]) / cw;
+        // The canvas itself drifts up under the curtain, so place the ring inside its on-screen rect
+        const r = this.canvas.getBoundingClientRect();
         this.claspHintEl.style.transform =
-          `translate(${((nx * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((0.5 - ny * 0.5) * innerHeight).toFixed(1)}px)`;
+          `translate(${(r.left + (nx * 0.5 + 0.5) * r.width).toFixed(1)}px, ${(r.top + (0.5 - ny * 0.5) * r.height).toFixed(1)}px)`;
       }
       this.claspHintEl.style.opacity = String(visible);
       const active = visible > 0.01;
