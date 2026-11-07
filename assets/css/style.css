@@ -1828,9 +1828,9 @@ html, body {
   z-index: 2;
   left: 50%;
   bottom: 0;
-  margin-left: calc(var(--fig-h) * -0.4977); /* half its width: stays centered even when wider than the screen */
+  margin-left: calc(var(--fig-h) * -0.5182); /* half its width: stays centered even when wider than the screen */
   height: var(--fig-h);
-  aspect-ratio: 1085 / 1090;
+  aspect-ratio: 1166 / 1125;
   will-change: transform, opacity;
 }
 
@@ -1849,10 +1849,11 @@ html, body {
   pointer-events: none;
   -webkit-mask: url('../img/hero/dexter.webp') center / 100% 100% no-repeat;
   mask: url('../img/hero/dexter.webp') center / 100% 100% no-repeat;
-  mix-blend-mode: multiply;
+  /* Normal blending on purpose: the figure is its own stacking context (transform), so "multiply"
+     would paint these light colors onto the semi-transparent hair edges as a pale halo */
   background:
     linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.1) 40%, rgba(0, 0, 0, 0.35) 100%),
-    linear-gradient(90deg, rgba(150, 170, 200, 1) 0%, rgba(215, 215, 220, 1) 45%, rgba(225, 195, 195, 1) 70%, rgba(195, 135, 135, 1) 100%);
+    linear-gradient(90deg, rgba(10, 30, 70, 0.4) 0%, rgba(10, 10, 15, 0.15) 45%, rgba(40, 0, 0, 0.15) 70%, rgba(70, 0, 0, 0.35) 100%);
 }
 
 /* Light, slowly flickering film grain over everything */
