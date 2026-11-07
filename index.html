@@ -109,32 +109,59 @@
 
   <div id="smooth-wrapper">
     <div id="smooth-content">
-      <!-- Hero: Iron Lake x Nova York, Dexter entre "DEXTER" (atrás) e "KILLS" (na frente) -->
-      <section id="hero-section" class="hero-section" data-section="0" aria-labelledby="hero-title">
-        <div class="hero-bg" aria-hidden="true"></div>
-        <div class="hero-shade" aria-hidden="true"></div>
-        <h1 id="hero-title" class="hero-title">
-          <span class="hero-word hero-word--back" data-hero-letters>Dexter</span>
-          <span class="hero-word hero-word--front">Kills</span>
-        </h1>
-        <div class="hero-figure" aria-hidden="true">
-          <img class="hero-dexter" src="assets/img/hero/dexter.webp" alt="" width="1085" height="1090" decoding="async" fetchpriority="high" />
-        </div>
-        <div class="hero-grain" aria-hidden="true"></div>
-        <div class="scroll-indicator" aria-hidden="true">
-          <span class="scroll-label">SCROLL</span>
-          <span class="scroll-line"></span>
-        </div>
-      </section>
+      <!-- Intro: a Hero fica por cima da Seção 1; no scroll, "KILLS" vira uma janela que cresce
+           (zoom no primeiro "L") e mostra a Seção 1, que já está ali embaixo (assets/js/main.js) -->
+      <div class="intro-stack">
+        <div class="intro-pin">
+        <!-- Hero: Iron Lake x Nova York, Dexter entre "DEXTER" (atrás) e "KILLS" (na frente) -->
+        <section id="hero-section" class="hero-section" data-section="0" aria-labelledby="hero-title">
+          <div class="hero-scene">
+            <div class="hero-bg" aria-hidden="true"></div>
+            <div class="hero-shade" aria-hidden="true"></div>
+            <h1 id="hero-title" class="hero-title">
+              <span class="hero-word hero-word--back" data-hero-letters>Dexter</span>
+              <span class="hero-word hero-word--front">Kills</span>
+            </h1>
+            <div class="hero-figure" aria-hidden="true">
+              <img class="hero-dexter" src="assets/img/hero/dexter.webp" alt="" width="1085" height="1090" decoding="async" fetchpriority="high" />
+            </div>
+            <div class="hero-grain" aria-hidden="true"></div>
+          </div>
+          <div class="scroll-indicator" aria-hidden="true">
+            <span class="scroll-label">SCROLL</span>
+            <span class="scroll-line"></span>
+          </div>
+        </section>
 
-      <!-- Seção 1 -->
-      <section class="story-section section-1" data-section="1">
-        <div class="section-inner">
-          <h2 class="story-headline" data-split-words>
-            Esta é a <span class="accent">noite.</span>
-          </h2>
+        <!-- Recorte "KILLS": máscara aplicada na Hero (buraco em forma de letra que cresce) -->
+        <svg class="hero-mask-defs" width="0" height="0" aria-hidden="true" focusable="false">
+          <mask id="hero-mask-cut" maskUnits="userSpaceOnUse" x="-10000" y="-10000" width="30000" height="30000">
+            <rect x="-10000" y="-10000" width="30000" height="30000" fill="#fff" />
+            <!-- polygon: the "L" stroke as plain geometry, exact at any zoom (huge text drifts in Chrome) -->
+            <g class="hero-mask-zoom"><text class="hero-mask-text" fill="#000">KILLS</text><polygon class="hero-mask-stem" fill="#000" points="0,0" /></g>
+          </mask>
+        </svg>
+        <!-- O vermelho das letras: cresce junto com o buraco e some no começo do zoom, mostrando a Seção 1 -->
+        <svg class="hero-mask-red" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="hero-mask-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#d6222b" />
+              <stop offset="1" stop-color="#8c0d14" />
+            </linearGradient>
+          </defs>
+          <g class="hero-mask-zoom"><text class="hero-mask-text" fill="url(#hero-mask-grad)">KILLS</text></g>
+        </svg>
+
+        <!-- Seção 1 (fica parada embaixo da Hero durante a transição) -->
+        <section class="story-section section-1" data-section="1">
+          <div class="section-inner">
+            <h2 class="story-headline" data-intro-words>
+              Esta é a <span class="accent">noite.</span>
+            </h2>
+          </div>
+        </section>
         </div>
-      </section>
+      </div>
 
       <!-- Seção 2 -->
       <section class="story-section section-2" data-section="2">

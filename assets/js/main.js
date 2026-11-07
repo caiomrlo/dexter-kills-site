@@ -495,11 +495,16 @@ class DexterBoxApp {
       // (starts at Section 1: while the Hero covers the screen the 3D scene stays at its first frame)
       const smoothContent = document.getElementById('smooth-content');
       const firstStory = document.querySelector('.section-1') || smoothContent;
+      // Section 1 lives inside the held intro: its triggers start once the KILLS transition ends
+      const introStack = document.querySelector('.intro-stack') || undefined;
+      const introPin = introStack && !this.introNative ? introStack.querySelector('.intro-pin') : undefined;
+      const firstStart = () => (introStack && this.introNative ? `top+=${this.introPinDistance()} top` : 'top top');
       const trophySection = document.getElementById('trophy-section');
       if (smoothContent && trophySection) {
         ScrollTrigger.create({
           trigger: firstStory,
-          start: 'top top',
+          pinnedContainer: introPin,
+          start: firstStart,
           endTrigger: trophySection,
           end: 'top top',
           scrub: true,
@@ -544,7 +549,8 @@ class DexterBoxApp {
         // in the outro, so the user never sees it come to a stop
         ScrollTrigger.create({
           trigger: firstStory || document.body,
-          start: 'top top',
+          pinnedContainer: introPin,
+          start: firstStart,
           endTrigger: outroSection,
           end: 'top 10%',
           scrub: true,
@@ -1237,7 +1243,7 @@ class DexterBoxApp {
 
   /**
    * Hero: load intro ("DEXTER" letters rise behind Dexter, he fades up, "KILLS" slides in front)
-   * and a scrubbed parallax as the section scrolls away, uncovering the 3D scene below.
+   * then the scrubbed "KILLS" window transition into Section 1.
    */
   _initHero(gsap, ScrollTrigger, SplitText) {
     const hero = document.getElementById('hero-section');
@@ -1268,35 +1274,203 @@ class DexterBoxApp {
     if (indicator) intro.to(indicator, { opacity: 0.72, y: 0, duration: 0.9, ease: 'power2.out' }, 1.5);
     this.pageShown.then(() => intro.play());
 
-    // Scroll-away parallax: layers drift at different speeds for depth
-    const away = { trigger: hero, start: 'top top', end: 'bottom top', scrub: true };
-    // Share of the screen still covered by the Hero (clips the over-text slide layer)
+    // ---- "KILLS" window transition (the Hero + Section 1 stack is pinned while it runs) ----
+    // A KILLS-shaped hole is cut through the Hero and zooms into the first "L". Section 1 is
+    // already in place under the Hero, so it shows through the letters from the first pixel of
+    // scroll and grows until it fills the screen. The red of the letters melts away early on.
+    const stack = hero.closest('.intro-stack');
+    if (!stack) return;
+    const PIN = 2.2;         // pin length, in Hero heights
+    const ZOOM_END = 0.8;    // the hole covers the whole screen
+    const SCENE_PUSH = 1.45; // how far the Hero itself pushes in (the letters grow much faster)
+    const scene = hero.querySelector('.hero-scene');
+    const section1 = stack.querySelector('.section-1');
+    const inner1 = section1 && section1.querySelector('.section-inner');
+    const headline1 = section1 && section1.querySelector('[data-intro-words]');
+    const redSvg = stack.querySelector('.hero-mask-red');
+    const redText = redSvg && redSvg.querySelector('.hero-mask-text');
+    const maskTexts = stack.querySelectorAll('.hero-mask-text');
+    const maskZooms = stack.querySelectorAll('.hero-mask-zoom');
+    const maskGrad = document.getElementById('hero-mask-grad');
+    const stem = stack.querySelector('.hero-mask-stem');
+    const canvas = document.getElementById('webgpu-canvas');
     const root = document.documentElement;
     root.style.setProperty('--hero-cover', '1');
-    ScrollTrigger.create({
-      ...away,
-      onUpdate: (self) => root.style.setProperty('--hero-cover', (1 - self.progress).toFixed(4))
-    });
-    gsap.to(bg, { yPercent: 14, ease: 'none', scrollTrigger: away });
-    // Words move one by one (a transform on their wrapper would push "KILLS" under Dexter)
-    const lift = () => -window.innerHeight * 0.18;
-    gsap.to([back, front], { y: lift, ease: 'none', scrollTrigger: { ...away, invalidateOnRefresh: true } });
-    gsap.to(figure, { yPercent: 6, ease: 'none', scrollTrigger: away });
-    // Darkens as it leaves, so the hand-off to the 3D scene reads as a fade into the night
-    gsap.to(hero, { '--hero-dim': 0.75, ease: 'none', scrollTrigger: away });
-
-    if (indicator) {
-      ScrollTrigger.create({
-        trigger: hero,
-        start: 'top top',
-        end: '30% top',
-        scrub: true,
-        animation: gsap.fromTo(indicator, { opacity: 0.72 }, { opacity: 0, y: 20, ease: 'none', immediateRender: false }),
-        // Faded out: pause its endless pulse so it stops ticking the compositor
-        onLeave: () => indicator.classList.add('is-paused'),
-        onEnterBack: () => indicator.classList.remove('is-paused')
-      });
+    // Phones scroll natively: the intro is held by CSS sticky (smooth, no JS lag); elsewhere GSAP pins it
+    const nativeScroll = ScrollTrigger.isTouch === 1 && !QUALITY.smoothTouch;
+    root.classList.toggle('native-scroll', nativeScroll);
+    this.introNative = nativeScroll;
+    this.introPinDistance = () => hero.offsetHeight * PIN;
+    if (nativeScroll) {
+      const setDistance = () => stack.style.setProperty('--intro-pin-distance', `${this.introPinDistance()}px`);
+      setDistance();
+      ScrollTrigger.addEventListener('refreshInit', setDistance);
     }
+
+    // Section 1 headline: its words rise in while the window opens
+    let words1 = [];
+    if (headline1) {
+      words1 = SplitText.create(headline1, { type: 'words', wordsClass: 'split-word' }).words;
+      gsap.set(headline1, { visibility: 'visible' });
+      gsap.set(words1, { opacity: 0, yPercent: 100, rotateX: -40, scale: 0.92 });
+    }
+
+    // Copies the DOM word's glyph positions into the SVG, and finds the middle of the
+    // first "L" stroke (the zoom point, so the zoom ends fully inside the letter)
+    const zoom = { origin: [0, 0], max: 120, slant: 0.2, stem: 10, z: 0 };
+    let measured = false;
+
+    const applyZoom = () => {
+      const [ox, oy] = zoom.origin;
+      const s = Math.exp(zoom.z * Math.log(zoom.max));
+      const t = `matrix(${s} 0 0 ${s} ${ox * (1 - s)} ${oy * (1 - s)})`;
+      maskZooms.forEach((g) => g.setAttribute('transform', t));
+      // The Hero pushes in toward the same point, much less than the letters (depth)
+      gsap.set(scene, { scale: Math.exp(zoom.z * Math.log(SCENE_PUSH)), transformOrigin: `${ox}px ${oy}px` });
+    };
+
+    const measure = () => {
+      if (!front || !front.firstChild) return;
+      const sceneScale = gsap.getProperty(scene, 'scale');
+      gsap.set(scene, { scale: 1 });
+      const host = hero.getBoundingClientRect();
+      const text = front.firstChild;
+      const range = document.createRange();
+      const xs = [];
+      for (let i = 0; i < text.length; i++) {
+        range.setStart(text, i);
+        range.setEnd(text, i + 1);
+        xs.push(range.getBoundingClientRect().left - host.left);
+      }
+      const probe = document.createElement('span');
+      probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline;';
+      front.appendChild(probe);
+      const baseline = probe.getBoundingClientRect().bottom - host.top;
+      probe.remove();
+      const box = front.getBoundingClientRect();
+      gsap.set(scene, { scale: sceneScale });
+      const fontSize = parseFloat(getComputedStyle(front).fontSize);
+      maskTexts.forEach((t) => {
+        t.setAttribute('x', xs.map((x) => x.toFixed(2)).join(' '));
+        t.setAttribute('y', baseline.toFixed(2));
+        t.setAttribute('font-size', fontSize.toFixed(2));
+      });
+      if (maskGrad) {
+        maskGrad.setAttribute('y1', (box.top - host.top).toFixed(2));
+        maskGrad.setAttribute('y2', (box.bottom - host.top).toFixed(2));
+      }
+
+      // Rasterize the "L" once and read its slanted stroke at three heights
+      const c = (this._glyphCanvas ||= document.createElement('canvas'));
+      const pad = Math.ceil(fontSize * 0.3);
+      c.width = Math.ceil(fontSize * 1.2);
+      c.height = Math.ceil(fontSize * 1.4);
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.font = `italic 700 ${fontSize}px "Barlow Condensed"`;
+      ctx.fillStyle = '#000';
+      const base = Math.round(fontSize * 1.15);
+      ctx.fillText('L', pad, base);
+      const cap = ctx.measureText('L').actualBoundingBoxAscent || fontSize * 0.7;
+      const run = (y) => {
+        const row = ctx.getImageData(0, Math.round(y), c.width, 1).data;
+        let a = -1;
+        let b = -1;
+        for (let x = 0; x < c.width; x++) {
+          if (row[x * 4 + 3] > 127) {
+            if (a < 0) a = x;
+            b = x;
+          } else if (a >= 0) break;
+        }
+        return a < 0 ? null : [a, b + 1];
+      };
+      const mid = run(base - cap * 0.5);
+      const hi = run(base - cap * 0.75);
+      const lo = run(base - cap * 0.25);
+      const lIndex = Math.max(text.data.toUpperCase().indexOf('L'), 0);
+      const gx = xs[lIndex] - pad;
+
+      // Chrome draws text scaled ~50x+ slightly off (the stroke slides sideways), so the
+      // "L" stroke is also cut as a polygon traced from the glyph: plain geometry stays exact
+      if (stem) {
+        const left = [];
+        const right = [];
+        for (let f = 0.28; f <= 0.961; f += 0.04) {
+          const r = run(base - cap * f);
+          if (!r) continue;
+          const y = (baseline - cap * f).toFixed(2);
+          left.push(`${(gx + r[0] + 0.75).toFixed(2)},${y}`);
+          right.unshift(`${(gx + r[1] - 0.75).toFixed(2)},${y}`);
+        }
+        stem.setAttribute('points', left.length > 1 ? left.concat(right).join(' ') : '0,0');
+      }
+      if (mid) {
+        zoom.origin = [gx + (mid[0] + mid[1]) / 2, baseline - cap * 0.5];
+        zoom.stem = mid[1] - mid[0];
+        if (hi && lo) zoom.slant = ((hi[0] + hi[1]) - (lo[0] + lo[1])) / 2 / (cap * 0.5);
+      } else {
+        zoom.origin = [xs[lIndex] + fontSize * 0.12, baseline - cap * 0.5];
+        zoom.stem = fontSize * 0.1;
+      }
+      // Scale at which the slanted stroke covers every corner of the screen (plus a margin)
+      const [ox, oy] = zoom.origin;
+      let reach = 0;
+      for (const [cx, cy] of [[0, 0], [host.width, 0], [0, host.height], [host.width, host.height]]) {
+        reach = Math.max(reach, Math.abs(cx - (ox + (oy - cy) * zoom.slant)));
+      }
+      const vReach = Math.max(oy, host.height - oy) / (cap * 0.5);
+      zoom.max = Math.max(20, (reach / (zoom.stem / 2)) * 1.12, vReach * 1.12);
+      measured = true;
+      applyZoom();
+    };
+
+    let state = '';
+    const setState = (p) => {
+      const next = p <= 0.0005 ? 'idle' : p < ZOOM_END ? 'zooming' : 'done';
+      if (next === state) return;
+      if (next !== 'idle' && !measured) {
+        intro.progress(1); // the word must be in its final spot before it is copied
+        measure();
+      }
+      state = next;
+      stack.classList.toggle('is-zooming', next === 'zooming');
+      stack.classList.toggle('is-zoomed', next === 'done');
+      // The slide copy drawn over the headlines stays hidden while the Hero is on screen
+      root.style.setProperty('--hero-cover', next === 'done' ? '0' : '1');
+      if (indicator) indicator.classList.toggle('is-paused', next !== 'idle');
+    };
+
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: {
+        trigger: stack,
+        start: 'top top',
+        end: () => `+=${hero.offsetHeight * PIN}`,
+        pin: nativeScroll ? false : stack.querySelector('.intro-pin'),
+        scrub: true,
+        invalidateOnRefresh: true,
+        onRefresh: () => {
+          if (!measured) return;
+          measured = false;
+          if (state !== 'idle') measure();
+        }
+      },
+      onUpdate: () => setState(tl.progress())
+    });
+
+    tl.to(zoom, { z: 1, duration: ZOOM_END, ease: 'sine.inOut', onUpdate: applyZoom }, 0);
+    if (redText) {
+      tl.fromTo(redText, { opacity: 1 }, { opacity: 0, duration: 0.24, ease: 'power1.out', immediateRender: false }, 0.02);
+    }
+    if (inner1) tl.fromTo(inner1, { scale: 1.18 }, { scale: 1, duration: ZOOM_END, ease: 'sine.out' }, 0);
+    if (canvas) tl.fromTo(canvas, { scale: 1.1 }, { scale: 1, duration: ZOOM_END, ease: 'sine.out' }, 0);
+    if (words1.length) {
+      tl.to(words1, { opacity: 1, yPercent: 0, rotateX: 0, scale: 1, ease: 'power3.out', stagger: 0.05, duration: 0.3 }, 0.38);
+    }
+    if (indicator) {
+      tl.fromTo(indicator, { opacity: 0.72 }, { opacity: 0, y: 20, duration: 0.06, immediateRender: false }, 0);
+    }
+    tl.to({}, { duration: 1 - ZOOM_END }, ZOOM_END);
   }
 
   /**
