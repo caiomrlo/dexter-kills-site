@@ -509,35 +509,50 @@ class DexterBoxApp {
       const introPin = introStack && !this.introNative ? introStack.querySelector('.intro-pin') : undefined;
       const firstStart = () => (introStack && this.introNative ? `top+=${this.introPinDistance()} top` : 'top top');
       this._initStoryStage(gsap, ScrollTrigger, SplitText, { firstStory, introPin, firstStart });
+      // The blades and the smoke start moving a bit before the KILLS hold ends (the hole already
+      // fills the screen at 80% of it), so the scene never feels stuck after the transition.
+      // The main ranges below stay exactly as they were (from the end of the hold); this short
+      // trigger only covers the lead-in, and withLead() bends the start of each range into it.
+      const MOTION_LEAD = 0.62; // share of the intro hold where the 3D motion starts
+      const leadIn = introStack
+        ? ScrollTrigger.create({
+            start: () => this.introPinDistance() * MOTION_LEAD,
+            end: () => this.introPinDistance(),
+            onUpdate: () => updateMotion()
+          })
+        : null;
+      let motionTrigger = null;
+      let smokeTrigger = null;
+      // Old progress p (0 at the end of the hold) -> progress with the lead-in. Past the join point
+      // it is the old progress untouched, so nothing later on moves (the blades reach the box at the
+      // same scroll spot); before it, a gentle ease-in starting at the lead-in, same speed at the join.
+      const withLead = (trigger) => {
+        const p = trigger.progress;
+        const range = trigger.end - trigger.start;
+        if (!leadIn || range <= 0) return p;
+        const lead = (leadIn.end - leadIn.start) / range; // lead-in length, in progress units
+        const u = p > 0 ? p : -lead * (1 - leadIn.progress);
+        const join = Math.max(0.3, 1.6 * lead);
+        if (u >= join) return u;
+        const w = join + lead;
+        const v = u + lead;
+        return (1 - (2 * lead) / w) * v + (lead / (w * w)) * v * v;
+      };
+      const updateMotion = () => {
+        if (motionTrigger) this._setPageScrollProgress(withLead(motionTrigger));
+        if (smokeTrigger) this.smokePan = withLead(smokeTrigger);
+      };
 
       const trophySection = document.getElementById('trophy-section');
       if (smoothContent && trophySection) {
-        ScrollTrigger.create({
+        motionTrigger = ScrollTrigger.create({
           trigger: firstStory,
           pinnedContainer: introPin,
           start: firstStart,
           endTrigger: trophySection,
           end: 'top top',
           scrub: true,
-          onUpdate: (self) => {
-            this.pageScrollProgress = self.progress;
-            // Enable 3D pointer interaction once the user is arriving at Section 4
-            if (this.pageScrollProgress > 0.84) {
-              this.canvas.classList.add('canvas-interactive');
-            } else {
-              this.canvas.classList.remove('canvas-interactive', 'pointer-interactive');
-              this.hoveredSlide = -1;
-              // Ensure box is open if user scrolls back up above Section 4
-              if (!this.isOpen && this.pageScrollProgress < 0.78) {
-                this.isOpen = true;
-                this.selectedSlide = -1;
-                this.camera.targetYaw = OPEN_VIEW.yaw;
-                this.camera.targetPitch = OPEN_VIEW.pitch;
-                this.camera.targetDistance = OPEN_VIEW.distance;
-                this.camera.targetCenter = [...OPEN_VIEW.center];
-              }
-            }
-          }
+          onUpdate: updateMotion
         });
       }
 
@@ -558,16 +573,14 @@ class DexterBoxApp {
 
         // Smoke pan: keeps moving past the box and only ends once the backdrop has faded out
         // in the outro, so the user never sees it come to a stop
-        ScrollTrigger.create({
+        smokeTrigger = ScrollTrigger.create({
           trigger: firstStory || document.body,
           pinnedContainer: introPin,
           start: firstStart,
           endTrigger: outroSection,
           end: 'top 10%',
           scrub: true,
-          onUpdate: (self) => {
-            this.smokePan = self.progress;
-          }
+          onUpdate: updateMotion
         });
 
         this._initKillsStage(gsap, outroSection);
@@ -886,6 +899,27 @@ class DexterBoxApp {
     }
   }
 
+  /** 3D scroll progress (0 = start of the blades' motion, 1 = Trophy Box in place). */
+  _setPageScrollProgress(p) {
+    this.pageScrollProgress = p;
+    // Enable 3D pointer interaction once the user is arriving at Section 4
+    if (this.pageScrollProgress > 0.84) {
+      this.canvas.classList.add('canvas-interactive');
+    } else {
+      this.canvas.classList.remove('canvas-interactive', 'pointer-interactive');
+      this.hoveredSlide = -1;
+      // Ensure box is open if user scrolls back up above Section 4
+      if (!this.isOpen && this.pageScrollProgress < 0.78) {
+        this.isOpen = true;
+        this.selectedSlide = -1;
+        this.camera.targetYaw = OPEN_VIEW.yaw;
+        this.camera.targetPitch = OPEN_VIEW.pitch;
+        this.camera.targetDistance = OPEN_VIEW.distance;
+        this.camera.targetCenter = [...OPEN_VIEW.center];
+      }
+    }
+  }
+
   _updateKinematics(dt, timeSec) {
     // Smoothly track pageScrollProgress (0.0 at Section 1 -> 1.0 at Section 4)
     const scrollSmooth = 1.0 - Math.exp(-12.0 * dt);
@@ -1057,9 +1091,10 @@ class DexterBoxApp {
 
     // 6. Update all 24 Glass Slides (including the 7 free-floating blood slides)
     const slideSmooth = 1.0 - Math.exp(-12.0 * dt);
-    const travel = Math.min(1.0, sProg / 0.72);
-    // Gentle ease-in-out so slides emerge very subtly from viewport edges across Sections 1-3
-    const travelSmooth = travel * travel * (3.0 - 2.0 * travel);
+    // Drift across Sections 1-3: eases in, then keeps a steady pace (reaches 1 at sProg 0.72) and
+    // carries on while the slides fly to the box, so they never stall before that flight
+    const travel = Math.min(1.25, sProg / 0.72);
+    const travelSmooth = (travel < 0.4 ? (travel * travel) / 0.8 : travel - 0.2) / 0.8;
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = this.slides[i];
@@ -1109,15 +1144,16 @@ class DexterBoxApp {
       const entryEnd = 0.88 + k * 0.018;
       const rawEntry = Math.min(1.0, Math.max(0.0, (sProg - entryStart) / (entryEnd - entryStart)));
 
-      // Horizontal & angular alignment finishes by rawEntry = 0.78 so the slide is 100% aligned
-      // directly above its slot before descending between the rack comb teeth
-      const rawAlign = Math.min(1.0, rawEntry / 0.78);
-      const alignT = rawAlign * rawAlign * (3.0 - 2.0 * rawAlign);
+      // One continuous flight: a single ease over the whole entry drives both the glide over the
+      // box and the drop into the slot, so the slide never slows down between the two.
+      // Alignment (position + angle) is done at 78% of the flight, before it goes between the comb teeth.
+      const flight = rawEntry * rawEntry * (3.0 - 2.0 * rawEntry);
+      const rawAlign = Math.min(1.0, flight / 0.78);
+      const alignT = 1.0 - (1.0 - rawAlign) * (1.0 - rawAlign);
       const rotWeight = 1.0 - alignT;
 
-      // Vertical drop into the slot finishes at rawEntry = 1.0
-      const rawDrop = Math.min(1.0, Math.max(0.0, (rawEntry - 0.64) / 0.36));
-      const dropT = rawDrop * rawDrop * (3.0 - 2.0 * rawDrop);
+      // Vertical drop into the slot: starts while the glide is still finishing, ends at the slot
+      const dropT = Math.min(1.0, Math.max(0.0, (flight - 0.6) / 0.4));
 
       // Idle zero-gravity floating oscillation (subtle, damps out as slide aligns with box)
       const idleX = Math.sin(timeSec * 1.05 + cfg.phase) * 0.012 * rotWeight;
