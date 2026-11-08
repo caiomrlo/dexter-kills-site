@@ -561,14 +561,6 @@ html::-webkit-scrollbar-thumb:hover {
   color: var(--text-muted);
 }
 
-.footer-drop {
-  width: 7px;
-  height: 7px;
-  background: var(--accent-blood);
-  border-radius: 0 50% 50% 50%;
-  transform: rotate(45deg);
-}
-
 .footer-author {
   pointer-events: auto; /* the smooth-scroll wrapper ignores the pointer */
   color: var(--text-warm-ivory);

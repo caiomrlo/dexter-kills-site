@@ -10,7 +10,7 @@ import { BOX_SPECS, getSlideSlotZ } from './geometry.js';
 import { Mat4, createRayFromCamera, intersectRayOBB } from './math.js';
 import { KILLS } from './kills.js';
 import { KillPanel } from './kill-panel.js';
-import { VictimList, LIST_ICON } from './victim-list.js';
+import { VictimList } from './victim-list.js';
 import { initBloodCursor } from './blood-cursor.js';
 import { QUALITY } from './quality.js';
 
@@ -96,6 +96,7 @@ const FLOATING_SLIDE_CONFIGS = [
   // 4. Top-Center-Left (high near top viewport border; always sharp and drawn over the headlines)
   {
     slotIndex: 6,
+    hideOnPhone: true, // stays in the box on phones (less clutter there)
     sharp: true,
     overText: true,
     ndcX: -0.24,
@@ -112,6 +113,7 @@ const FLOATING_SLIDE_CONFIGS = [
   // 5. Top-Right (framing upper-right corner, blood specimen visible)
   {
     slotIndex: 8,
+    hideOnPhone: true, // stays in the box on phones (less clutter there)
     lensBlur: 0.3, // slightly soft (its depth alone would keep it sharp)
     ndcX: 0.86,
     ndcY: 0.80,
@@ -208,7 +210,7 @@ class DexterBoxApp {
     this.listBtn = document.createElement('button');
     this.listBtn.type = 'button';
     this.listBtn.className = 'victim-list-trigger';
-    this.listBtn.innerHTML = `${LIST_ICON}<span>Ver lista de vítimas</span>`;
+    this.listBtn.innerHTML = `<span>Ver lista de vítimas</span>`;
     document.body.appendChild(this.listBtn);
     this.listBtnShown = -1;
 
@@ -1050,9 +1052,12 @@ class DexterBoxApp {
     // carries on while the slides fly to the box, so they never stall before that flight
     const travel = Math.min(1.25, sProg / 0.72);
     const travelSmooth = (travel < 0.4 ? (travel * travel) / 0.8 : travel - 0.2) / 0.8;
+    // Phone screens (tall, same cut as the CSS 3/4 breakpoint) show fewer floating slides
+    const phone = aspect < 0.75;
 
     for (let i = 0; i < BOX_SPECS.numSlides; i++) {
       const s = this.slides[i];
+      s.isFloating = s.floatCfg !== null && !(phone && s.floatCfg.hideOnPhone);
       const targetHover = (this.isOpen && this.hoveredSlide === i && this.selectedSlide !== i) ? 1.0 : 0.0;
       const targetSelect = (this.isOpen && this.selectedSlide === i) ? 1.0 : 0.0;
 
