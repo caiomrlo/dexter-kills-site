@@ -269,23 +269,6 @@ html::-webkit-scrollbar-thumb:hover {
   pointer-events: none;
 }
 
-/* Closed-box stage (Section 5): sits behind the transparent 3D canvas */
-.kills-stage {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.kills-bg {
-  position: absolute;
-  inset: -12% 0;
-  background: #000 url('../img/backgrounds/kills-bg.webp') center / cover no-repeat;
-  opacity: 0;
-  will-change: transform, opacity;
-}
-
 #webgpu-canvas {
   position: fixed;
   inset: 0;
@@ -310,7 +293,7 @@ html::-webkit-scrollbar-thumb:hover {
   clip-path: inset(calc(var(--hero-cover, 0) * 100%) 0 0 0);
 }
 
-/* Dark atmospheric backdrop: dimmed red smoke photo + vignette (fallback; WebGL pans it with scroll) */
+/* Dark atmospheric backdrop: dimmed red smoke photo + vignette (fallback only; WebGL draws the scroll-scrubbed smoke video instead) */
 .dark-backdrop {
   position: fixed;
   inset: 0;

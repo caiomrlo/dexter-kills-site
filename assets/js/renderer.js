@@ -279,31 +279,36 @@ class SlideDepthBlurPass extends Pass {
 }
 
 /**
- * The page's dark atmosphere: a red smoke photo that slides to the right as the page scrolls
- * (Section 1 -> the box), plus a vignette. Screen-blended over the frame inside
+ * The page's dark atmosphere: a red smoke video scrubbed by the scroll (Section 1 -> the box,
+ * where it reaches its last frame), plus a vignette. Screen-blended over the frame inside
  * the OutputPass right after tone mapping + sRGB, so it costs no extra full-screen pass.
  * Works in display (sRGB) space, like the browser did.
+ *
+ * The videos are encoded for scrubbing: every frame is a keyframe (all-intra H.264, 30 fps,
+ * no audio, faststart), so any scroll position is one cheap seek. They are fetched whole into
+ * memory first, so seeks never wait on network range requests.
  */
-const SMOKE_URL = 'assets/img/backgrounds/smoke-bg.webp';
-const SMOKE_MIN_WIDTH = 1.5; // image is at least 1.5x the viewport width, so there is room to pan
-const SMOKE_STRENGTH = 0.6;  // brightness of the smoke (1 = the photo as is)
+const SMOKE_VIDEO_URL = QUALITY.tier === 'low'
+  ? 'assets/video/smoke-scrub-mobile.mp4' // 1280x640
+  : 'assets/video/smoke-scrub.mp4';       // 1600x800
+const SMOKE_POSTER_URL = 'assets/video/smoke-scrub-poster.webp'; // first frame, shown until the video is ready
+const SMOKE_STRENGTH = 0.6;  // brightness of the smoke (1 = the video as is)
 
 const BACKDROP_GLSL = /* glsl */ `
   uniform float uBackdrop;
   uniform vec2 uResolution;  // CSS pixels
   uniform float uPixelRatio;
   uniform sampler2D uSmoke;
-  uniform vec2 uSmokeSize;   // image size in pixels
-  uniform float uSmokePan;   // 0 = top of the page, 1 = the box
+  uniform vec2 uSmokeSize;   // video size in pixels
 
   vec4 applyBackdrop(vec4 frame, vec2 uv) {
     vec2 res = uResolution;
     vec2 p = vec2(uv.x, 1.0 - uv.y) * res; // CSS pixels, y down
 
-    // Smoke: covers the screen, wider than it, left edge travels from -overflow to 0 (moves right)
-    float scale = max(res.y / uSmokeSize.y, res.x * ${SMOKE_MIN_WIDTH.toFixed(2)} / uSmokeSize.x);
+    // Smoke: covers the screen, centered
+    float scale = max(res.y / uSmokeSize.y, res.x / uSmokeSize.x);
     vec2 size = uSmokeSize * scale;
-    vec2 origin = vec2(-(size.x - res.x) * (1.0 - uSmokePan), (res.y - size.y) * 0.5);
+    vec2 origin = (res - size) * 0.5;
     vec2 st = (p - origin) / size;
     // Toned down so the smoke stays in the background (no white grain: it greyed the whole page)
     vec3 s = texture2D(uSmoke, vec2(st.x, 1.0 - st.y)).rgb * ${SMOKE_STRENGTH.toFixed(2)};
@@ -325,8 +330,7 @@ function addBackdropToOutput(outputPass) {
     uResolution: { value: new THREE.Vector2(1, 1) },
     uPixelRatio: { value: 1.0 },
     uSmoke: { value: null },
-    uSmokeSize: { value: new THREE.Vector2(2000, 1000) },
-    uSmokePan: { value: 0.0 }
+    uSmokeSize: { value: new THREE.Vector2(1600, 800) }
   });
   const fs = outputPass.material.fragmentShader;
   const mainAt = fs.indexOf('void main()');
@@ -339,18 +343,99 @@ function addBackdropToOutput(outputPass) {
   outputPass.material.needsUpdate = true;
 }
 
-/** Loads the smoke photo into the backdrop (kept in sRGB: the backdrop runs in display space). */
-async function loadSmoke(outputPass) {
-  try {
-    const tex = await new THREE.TextureLoader().loadAsync(SMOKE_URL);
-    tex.colorSpace = THREE.NoColorSpace;
-    tex.minFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
-    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-    outputPass.uniforms.uSmoke.value = tex;
-    outputPass.uniforms.uSmokeSize.value.set(tex.image.width, tex.image.height);
-  } catch (err) {
-    console.warn('Smoke background failed to load', err);
+/** Texture settings for the backdrop (kept in sRGB: the backdrop runs in display space). */
+function prepSmokeTexture(tex) {
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
+/**
+ * Scroll-scrubbed smoke video. Shows the poster right away, then swaps to the video once it
+ * can show a frame. seek(progress) runs every animation frame: it only starts a new seek when
+ * the previous one has finished, always toward the latest scroll position, so fast scrolling
+ * never queues up a backlog of seeks.
+ */
+class SmokeVideo {
+  constructor(outputPass, onFrame) {
+    this.outputPass = outputPass;
+    this.onFrame = onFrame; // asks the renderer to draw (the frame-skip check can't see the video)
+    this.video = null;
+    this.texture = null;
+    this.ready = false;
+    this.target = 0;
+  }
+
+  async load() {
+    try {
+      const poster = await new THREE.TextureLoader().loadAsync(SMOKE_POSTER_URL);
+      if (!this.ready) {
+        this.outputPass.uniforms.uSmoke.value = prepSmokeTexture(poster);
+        this.outputPass.uniforms.uSmokeSize.value.set(poster.image.width, poster.image.height);
+      }
+    } catch (err) {
+      console.warn('Smoke poster failed to load', err);
+    }
+    // The video itself loads in the background: the page doesn't wait for it
+    this._loadVideo();
+  }
+
+  async _loadVideo() {
+    try {
+      const res = await fetch(SMOKE_VIDEO_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+      video.disablePictureInPicture = true;
+      video.src = url;
+      await new Promise((resolve, reject) => {
+        if (video.readyState >= 2) return resolve();
+        video.addEventListener('loadeddata', resolve, { once: true });
+        video.addEventListener('error', () => reject(video.error), { once: true });
+      });
+
+      const tex = prepSmokeTexture(new THREE.VideoTexture(video));
+      video.addEventListener('seeked', () => {
+        tex.needsUpdate = true;
+        this.onFrame();
+        this._seekToTarget();
+      });
+
+      // A paused video outside the page never presents a frame by itself, so the first frame
+      // must be uploaded by hand (otherwise the backdrop stays black until the first seek)
+      tex.needsUpdate = true;
+      this.video = video;
+      this.texture = tex;
+      this.ready = true;
+      this.outputPass.uniforms.uSmoke.value = tex;
+      this.outputPass.uniforms.uSmokeSize.value.set(video.videoWidth, video.videoHeight);
+      this._seekToTarget();
+      this.onFrame();
+    } catch (err) {
+      console.warn('Smoke video failed to load (keeping the poster)', err);
+    }
+  }
+
+  /** progress: 0 = first frame (Section 1), 1 = last frame (the box). */
+  seek(progress) {
+    this.target = Math.max(0, Math.min(1, progress || 0));
+    if (this.ready && !this.video.seeking) this._seekToTarget();
+  }
+
+  _seekToTarget() {
+    const v = this.video;
+    if (!v || v.seeking || !v.duration) return;
+    // Stop just short of the end: seeking to the exact duration can show nothing on some browsers
+    const time = this.target * Math.max(0, v.duration - 0.05);
+    if (Math.abs(v.currentTime - time) < 1 / 60) return; // already on that frame (30 fps video)
+    v.currentTime = time;
   }
 }
 
@@ -421,7 +506,10 @@ export class TrophyBoxRenderer {
     this._setupPostProcessing();
 
     this.resize();
-    if (this.outputPass) await loadSmoke(this.outputPass);
+    if (this.outputPass) {
+      this.smokeVideo = new SmokeVideo(this.outputPass, () => { this._forceRender = true; });
+      await this.smokeVideo.load();
+    }
     await this._warmUp();
   }
 
@@ -1398,6 +1486,9 @@ export class TrophyBoxRenderer {
 
     const boxVisible = sceneState.boxVisible !== false;
 
+    // Scrub the smoke video to the scroll (a new video frame forces a draw when it lands)
+    if (this.smokeVideo) this.smokeVideo.seek(sceneState.smokeProgress);
+
     // Nothing moved since the last drawn frame: keep the current image on the canvas
     const sigLen = this._frameSignature(sceneState, boxVisible);
     if (!this._signatureChanged(sigLen) && !this._forceRender) return;
@@ -1607,7 +1698,6 @@ export class TrophyBoxRenderer {
     // 6. Page atmosphere (fades out on the closed-box stage)
     if (this.outputPass) {
       this.outputPass.uniforms.uBackdrop.value = Math.max(0, Math.min(1, sceneState.backdropOpacity ?? 1));
-      this.outputPass.uniforms.uSmokePan.value = Math.max(0, Math.min(1, sceneState.smokePan ?? 0));
     }
 
     // 7. Render with Integrated Post-Processing

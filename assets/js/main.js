@@ -172,9 +172,9 @@ class DexterBoxApp {
     // Global scroll progress from top of Section 1 (0.0) to top of Section 4 (1.0)
     this.pageScrollProgress = 0.0;
     this.smoothScrollProgress = 0.0;
-    // Smoke background pan: 0 at the top of the page, 1 once it has faded out in the outro
-    this.smokePan = 0.0;
-    this.smoothSmokePan = 0.0;
+    // Smoke video: 0 = first frame (Section 1), 1 = last frame (the box has just closed)
+    this.smokeProgress = 0.0;
+    this.smoothSmokeProgress = 0.0;
     this.rafId = null;
 
     // Outro (Section 5) progress: 0 = box open & centered, 1 = closed & on the right
@@ -183,7 +183,7 @@ class DexterBoxApp {
     this.outroUnlocked = false; // true once the user opened the box by clicking the clasp
     this.claspHintEl = document.querySelector('.clasp-hint');
     this.finaleProgress = 0; // 0..1 while Section 6 (kill count) slides up over the box
-    // Page atmosphere strength (drawn by the renderer's last pass; fades out on the closed-box stage)
+    // Page atmosphere strength (drawn by the renderer's last pass; the smoke video stays on behind the box)
     this.backdropFx = { opacity: 1 };
     // Camera basis reused every frame (world space)
     this.camForward = [0, 0, -1];
@@ -506,7 +506,7 @@ class DexterBoxApp {
       };
       const updateMotion = () => {
         if (motionTrigger) this._setPageScrollProgress(withLead(motionTrigger));
-        if (smokeTrigger) this.smokePan = withLead(smokeTrigger);
+        if (smokeTrigger) this.smokeProgress = withLead(smokeTrigger);
       };
 
       const trophySection = document.getElementById('trophy-section');
@@ -537,19 +537,18 @@ class DexterBoxApp {
           }
         });
 
-        // Smoke pan: keeps moving past the box and only ends once the backdrop has faded out
-        // in the outro, so the user never sees it come to a stop
+        // Smoke video: plays through the whole run, from Section 1 until the box has closed
+        // (same scroll spot where outroProgress reaches 1), then holds its last frame
         smokeTrigger = ScrollTrigger.create({
-          trigger: firstStory || document.body,
+          trigger: firstStory,
           pinnedContainer: introPin,
           start: firstStart,
           endTrigger: outroSection,
-          end: 'top 10%',
+          end: 'top top',
           scrub: true,
           onUpdate: updateMotion
         });
 
-        this._initKillsStage(gsap, outroSection);
       }
 
       // Section 6 (kill count): the first dark section, slides up over the box like a curtain
@@ -563,7 +562,7 @@ class DexterBoxApp {
             this.finaleProgress = self.progress;
           }
         });
-        gsap.to(['#webgpu-canvas', '.kills-stage'], { yPercent: -28, ease: 'none', scrollTrigger: curtainScroll });
+        gsap.to('#webgpu-canvas', { yPercent: -28, ease: 'none', scrollTrigger: curtainScroll });
 
         const number = countSection.querySelector('.count-number');
         if (number) {
@@ -882,7 +881,7 @@ class DexterBoxApp {
     const scrollSmooth = 1.0 - Math.exp(-12.0 * dt);
     this.smoothScrollProgress += (this.pageScrollProgress - this.smoothScrollProgress) * scrollSmooth;
     const sProg = Math.min(1.0, Math.max(0.0, this.smoothScrollProgress));
-    this.smoothSmokePan += (this.smokePan - this.smoothSmokePan) * scrollSmooth;
+    this.smoothSmokeProgress += (this.smokeProgress - this.smoothSmokeProgress) * scrollSmooth;
 
     // Camera vertical lift & pitch transition across the 4 sections:
     // During Sections 1..3 (sProg 0.0 -> 0.72), the camera is high above the Trophy Box
@@ -1746,27 +1745,6 @@ class DexterBoxApp {
     });
   }
 
-  /**
-   * Closed-box stage: the red haze fades in with a slow parallax drift as the outro scrolls.
-   */
-  _initKillsStage(gsap, outroSection) {
-    const bg = document.querySelector('.kills-bg');
-    if (!bg) return;
-
-    gsap.set(bg, { opacity: 0, yPercent: 6, scale: 1.08 });
-
-    const scroll = { trigger: outroSection, start: 'top 90%', end: 'bottom bottom', scrub: 1.4 };
-
-    // Background: fade in early, then keep drifting for the whole outro (parallax)
-    const bgTl = gsap.timeline({ scrollTrigger: scroll, defaults: { ease: 'none' } });
-    bgTl
-      .to(bg, { yPercent: -6, scale: 1.0, duration: 1 }, 0)
-      .to(bg, { opacity: 1, duration: 0.35, ease: 'power1.inOut' }, 0)
-      // The page-wide grey haze would wash out the red background, so it bows out here
-      .to('.dark-backdrop', { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0)
-      .to(this.backdropFx, { opacity: 0, duration: 0.35, ease: 'power1.inOut' }, 0);
-  }
-
   _updateHints() {
     // Clasp cue: box shut at the end of the outro — ring tracks the clasp in screen space
     if (this.claspHintEl) {
@@ -1867,7 +1845,7 @@ class DexterBoxApp {
       boxVisible,
       backgroundBlur: this.revealBlur,
       backdropOpacity: this.backdropFx.opacity,
-      smokePan: this.smoothSmokePan // smoke slides right from Section 1 until it fades out after the box
+      smokeProgress: this.smoothSmokeProgress // smoke video: first frame at Section 1, last frame once the box closes
     });
 
     this.rafId = requestAnimationFrame((t) => this._loop(t));
