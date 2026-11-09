@@ -387,6 +387,8 @@ class DexterBoxApp {
   async start() {
     // Resolves once the loading screen has faded out (the hero entrance waits for it)
     this.pageShown = new Promise((resolve) => { this._resolvePageShown = resolve; });
+    // Resolves when the Hero intro has played (set up in _initHero)
+    this.heroIntroDone = new Promise((resolve) => { this._resolveHeroIntro = resolve; });
     this._initScrollAndTypography();
     if (this.killPanel && KILLS[this.killIndex]) {
       this.killPanel.setKill(KILLS[this.killIndex], this.killIndex, KILLS.length);
@@ -406,6 +408,12 @@ class DexterBoxApp {
       if (this.smoother) this.smoother.paused(this.navLocked);
     };
 
+    // The Hero comes up as soon as its fonts and images are in; the 3D scene is built behind it
+    this._showPage();
+    // Its last main-thread steps (shader compile) wait for the Hero intro, so the intro never stutters,
+    // unless the visitor starts scrolling first: then the scene is needed right away
+    await Promise.race([this.heroIntroDone, this._firstScrollIntent(), new Promise((r) => setTimeout(r, 4000))]);
+
     try {
       await this.renderer.init();
       // The renderer now draws the dark atmosphere itself; the CSS layer is the fallback only
@@ -418,16 +426,39 @@ class DexterBoxApp {
       const errOverlay = document.getElementById('webgpu-error');
       if (errOverlay) errOverlay.classList.remove('hidden');
     }
-    this._hideLoader();
+    this._onSceneReady();
   }
 
-  /** Fades the loading screen out once the fonts are in and the first 3D frame is on screen. */
-  async _hideLoader() {
-    if (document.fonts && document.fonts.ready) {
-      await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))]);
+  /** Resolves on the first wheel / touch / key input that could scroll the page. */
+  _firstScrollIntent() {
+    return new Promise((resolve) => {
+      const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+      const done = () => {
+        events.forEach((type) => window.removeEventListener(type, done, true));
+        resolve();
+      };
+      events.forEach((type) => window.addEventListener(type, done, { capture: true, passive: true }));
+    });
+  }
+
+  /** Fades the loading screen out once the fonts and the Hero images are in. */
+  async _showPage() {
+    const heroImages = [];
+    const dexter = document.querySelector('.hero-dexter');
+    if (dexter && dexter.decode) heroImages.push(dexter.decode().catch(() => {}));
+    const bg = document.querySelector('.hero-bg');
+    const bgUrl = bg && (getComputedStyle(bg).backgroundImage.match(/url\(["']?(.*?)["']?\)/) || [])[1];
+    if (bgUrl) {
+      const img = new Image();
+      img.src = bgUrl;
+      heroImages.push(img.decode ? img.decode().catch(() => {}) : Promise.resolve());
     }
+    const fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    await Promise.race([Promise.all([fonts, ...heroImages]), new Promise((r) => setTimeout(r, 3000))]);
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+    // The page can scroll as soon as the Hero is up (the CSS smoke backdrop stands in for the
+    // 3D scene if the visitor gets past the Hero before it is ready; the scene then fades in)
     document.documentElement.classList.remove('is-loading');
     const loader = document.getElementById('page-loader');
     if (loader) {
@@ -436,6 +467,14 @@ class DexterBoxApp {
     }
     if (window.ScrollTrigger) window.ScrollTrigger.refresh();
     this._resolvePageShown();
+  }
+
+  /** The 3D scene is built (or failed): start the smoke video download. */
+  _onSceneReady() {
+    // The smoke video is only seen after the Hero, so its download waits until now
+    // (the poster frame covers it until then) instead of competing with the first paint
+    const smoke = this.renderer && this.renderer.smokeVideo;
+    if (smoke) smoke.loadVideo();
   }
 
   _initScrollAndTypography() {
@@ -1275,7 +1314,7 @@ class DexterBoxApp {
     gsap.set(bg, { scale: 1.12 });
     if (indicator) gsap.set(indicator, { opacity: 0, y: 14 });
 
-    const intro = gsap.timeline({ delay: 0.1, paused: true });
+    const intro = gsap.timeline({ delay: 0.1, paused: true, onComplete: () => this._resolveHeroIntro() });
     intro
       .to(bg, { scale: 1.04, duration: 2.6, ease: 'power2.out' }, 0)
       .to(letters, { yPercent: 0, opacity: 1, duration: 1.3, stagger: 0.07, ease: 'expo.out' }, 0.15)

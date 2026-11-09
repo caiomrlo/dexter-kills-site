@@ -33,7 +33,8 @@ import {
   createRackPBRMaps,
   createIndexCardMaps,
   createBloodSpecimenVariants,
-  createGlassSlideSurfaceMaps
+  createGlassSlideSurfaceMaps,
+  prepareProceduralTextures
 } from './textures.js';
 
 import { QUALITY } from './quality.js';
@@ -379,8 +380,14 @@ class SmokeVideo {
     } catch (err) {
       console.warn('Smoke poster failed to load', err);
     }
-    // The video itself loads in the background: the page doesn't wait for it
-    this._loadVideo();
+  }
+
+  /** The video itself (several MB) loads in the background once the page is on screen. */
+  loadVideo() {
+    if (!this._videoRequested) {
+      this._videoRequested = true;
+      this._loadVideo();
+    }
   }
 
   async _loadVideo() {
@@ -493,7 +500,8 @@ export class TrophyBoxRenderer {
     // 1. Generate Studio PMREM Environment Map for realistic PBR reflections
     this._createStudioEnvironment();
 
-    // 2. Generate Procedural PBR Textures & Materials
+    // 2. Procedural PBR Textures (built in a worker meanwhile) & Materials
+    await prepareProceduralTextures();
     this._createMaterials();
 
     // 3. Build Scene Hierarchy (Trophy Box, Floor Reflection, 24 Microscope Slides)

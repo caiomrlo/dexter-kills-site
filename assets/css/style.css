@@ -278,6 +278,13 @@ html::-webkit-scrollbar-thumb:hover {
   z-index: 1;
   pointer-events: none;
   touch-action: pan-y;
+  /* fades in once the 3D scene is ready (it is built behind the Hero; see main.js) */
+  opacity: 0;
+  transition: opacity 0.8s ease;
+}
+
+.webgl-backdrop #webgpu-canvas {
+  opacity: 1;
 }
 
 /* Copy of the floating slide(s) the headlines pass behind (drawn by renderer.js, same size as the canvas) */
@@ -306,7 +313,9 @@ html::-webkit-scrollbar-thumb:hover {
 /* The WebGL renderer draws this atmosphere in its last pass (cheaper than a blended full-screen layer);
    the CSS version stays only as the fallback when WebGL fails to start */
 .webgl-backdrop .dark-backdrop {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.8s ease, visibility 0s linear 0.8s; /* cross-fades with the canvas */
 }
 
 .dark-backdrop::before,

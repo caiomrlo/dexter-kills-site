@@ -60,7 +60,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <noscript><link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,700;0,800;0,900;1,300;1,400;1,600;1,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" /></noscript>
   <link rel="stylesheet" href="assets/css/style.css" />
-  <link rel="preload" as="image" href="assets/img/hero/hero-bg.webp" />
+  <!-- Only the Hero background this screen uses (same breakpoint as style.css) -->
+  <link rel="preload" as="image" href="assets/img/hero/hero-bg.webp" media="not all and (max-aspect-ratio: 3/4)" fetchpriority="high" />
+  <link rel="preload" as="image" href="assets/img/hero/hero-bg-mobile.webp" media="(max-aspect-ratio: 3/4)" fetchpriority="high" />
+  <link rel="preload" as="image" href="assets/img/hero/dexter.webp" fetchpriority="high" />
   <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" crossorigin />
   <script type="importmap">
     {
@@ -70,9 +73,23 @@
       }
     }
   </script>
+  <!-- After the import map (they import "three"). The 3D modules import each other in a chain; fetching them all now saves a round-trip per level -->
+  <link rel="modulepreload" href="assets/js/renderer.js" />
+  <link rel="modulepreload" href="assets/js/textures.js" />
+  <link rel="modulepreload" href="assets/js/texture-pixels.js" />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/EffectComposer.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/ShaderPass.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/MaskPass.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/Pass.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/postprocessing/UnrealBloomPass.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/CopyShader.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/LuminosityHighPassShader.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/shaders/OutputShader.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/geometries/RoundedBoxGeometry.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/utils/BufferGeometryUtils.js" crossorigin />
 </head>
 <body>
-  <!-- Tela de carregamento: some quando a cena 3D e as fontes estiverem prontas (assets/js/main.js) -->
+  <!-- Tela de carregamento: some quando as fontes e as imagens da Hero estiverem prontas; a cena 3D termina de montar por trás (assets/js/main.js) -->
   <div id="page-loader" class="page-loader" role="status" aria-live="polite">
     <span class="page-loader__drop" aria-hidden="true"></span>
     <span class="page-loader__bar" aria-hidden="true"></span>
