@@ -1875,8 +1875,8 @@ html::-webkit-scrollbar-thumb:hover {
   font-size: min(29vw, 54vh);
   letter-spacing: 0.015em;
   padding-left: 0.015em; /* re-centers the trailing letter-spacing */
-  --back-grad: linear-gradient(180deg, #ddd6cb 0%, #a39c92 50%, #3e3a37 100%);
-  color: #d9d3ca;
+  --back-grad: linear-gradient(180deg, #e0252f 0%, #b3141d 50%, #5c070d 100%);
+  color: #c8202a;
   background: var(--back-grad);
   -webkit-background-clip: text;
   background-clip: text;
