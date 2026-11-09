@@ -453,7 +453,7 @@ html::-webkit-scrollbar-thumb:hover {
   --cast-gap: 14px;
   position: relative;
   width: 100%;
-  height: 400vh; /* scroll room for the swaps; the stage below stays on screen meanwhile */
+  height: 620vh; /* scroll room for the swaps; the stage below stays on screen meanwhile */
   background: var(--after-box-bg);
 }
 
