@@ -1600,13 +1600,8 @@ class DexterBoxApp {
     const pin = section.querySelector('.cast-pin');
     const track = section.querySelector('.cast-track');
     const texts = Array.from(section.querySelectorAll('.cast-text'));
-    const nowEl = section.querySelector('.cast-counter__now');
-    const totalEl = section.querySelector('.cast-counter__total');
     const count = texts.length;
     if (!pin || !track || count < 2) return;
-
-    const pad = (n) => String(n).padStart(2, '0');
-    if (totalEl) totalEl.textContent = pad(count);
 
     // Each name gets an inner line that slides inside the (clipped) heading
     const parts = texts.map((item) => {
@@ -1628,7 +1623,6 @@ class DexterBoxApp {
       ScrollTrigger.create({ trigger: section, start: 'top top', end: 'bottom bottom', pin, pinSpacing: false });
     }
 
-    let shown = -1;
     const state = { pos: 0 };
     const apply = () => {
       const pos = state.pos;
@@ -1646,11 +1640,6 @@ class DexterBoxApp {
           desc.style.transform = `translate3d(0, ${(-d * 26).toFixed(1)}px, 0)`;
         }
       });
-      const current = Math.round(pos);
-      if (current !== shown) {
-        shown = current;
-        if (nowEl) nowEl.textContent = pad(current + 1);
-      }
     };
     apply();
 
