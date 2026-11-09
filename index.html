@@ -63,7 +63,7 @@
   <!-- Only the Hero background this screen uses (same breakpoint as style.css) -->
   <link rel="preload" as="image" href="assets/img/hero/hero-bg.webp" media="not all and (max-aspect-ratio: 3/4)" fetchpriority="high" />
   <link rel="preload" as="image" href="assets/img/hero/hero-bg-mobile.webp" media="(max-aspect-ratio: 3/4)" fetchpriority="high" />
-  <link rel="preload" as="image" href="assets/img/hero/dexter.webp" fetchpriority="high" />
+  <link rel="preload" as="image" href="assets/img/hero/dexter.webp" imagesrcset="assets/img/hero/dexter-640.webp 640w, assets/img/hero/dexter-900.webp 900w, assets/img/hero/dexter.webp 1166w" imagesizes="(max-aspect-ratio: 8/15) 156vw, (max-aspect-ratio: 3/4) 83vh, 98vh" fetchpriority="high" />
   <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" crossorigin />
   <script type="importmap">
     {
@@ -138,7 +138,8 @@
               <span class="hero-word hero-word--front">Kills</span>
             </h1>
             <div class="hero-figure" aria-hidden="true">
-              <img class="hero-dexter" src="assets/img/hero/dexter.webp" alt="" width="1166" height="1125" decoding="async" fetchpriority="high" />
+              <!-- sizes = the figure width: its height (--fig-h in style.css) x 1166/1125. Plain media conditions, no min(): the preload scanner ignores min() and would fetch the biggest file -->
+              <img class="hero-dexter" src="assets/img/hero/dexter.webp" srcset="assets/img/hero/dexter-640.webp 640w, assets/img/hero/dexter-900.webp 900w, assets/img/hero/dexter.webp 1166w" sizes="(max-aspect-ratio: 8/15) 156vw, (max-aspect-ratio: 3/4) 83vh, 98vh" alt="" width="1166" height="1125" decoding="async" fetchpriority="high" />
             </div>
             <div class="hero-grain" aria-hidden="true"></div>
           </div>

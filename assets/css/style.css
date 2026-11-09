@@ -2036,8 +2036,9 @@ html::-webkit-scrollbar-thumb:hover {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  -webkit-mask: url('../img/hero/dexter.webp') center / 100% 100% no-repeat;
-  mask: url('../img/hero/dexter.webp') center / 100% 100% no-repeat;
+  /* dexter-mask.webp: just his silhouette (alpha) at full size, much lighter than the photo */
+  -webkit-mask: url('../img/hero/dexter-mask.webp') center / 100% 100% no-repeat;
+  mask: url('../img/hero/dexter-mask.webp') center / 100% 100% no-repeat;
   /* Normal blending on purpose: the figure is its own stacking context (transform), so "multiply"
      would paint these light colors onto the semi-transparent hair edges as a pale halo */
   background:
