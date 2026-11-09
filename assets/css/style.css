@@ -436,14 +436,6 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
-.count-rule {
-  display: block;
-  width: clamp(28px, 6vw, 90px);
-  height: 1px;
-  background: currentColor;
-  opacity: 0.7;
-}
-
 .count-copy {
   max-width: 34ch;
   margin-top: 0.4em;

@@ -1780,8 +1780,8 @@ class DexterBoxApp {
     const TOTAL = 168;
     // How much the photo follows the page: 0 = fixed to the screen, 1 = glued to the number
     const FOLLOW = 0.3;
-    const IMAGE_RATIO = 4 / 3; // kill-count.webp is 1600x1200
-    const MAX_ZOOM = 2.3; // photo width at most this many times the number's width
+    const IMAGE_RATIO = 1611 / 1440; // kill-count.webp is 1611x1440 (face centered vertically)
+    const MAX_ZOOM = 1.5; // photo width at most this many times the number's width
 
     let imgW = 0;
     let imgH = 0;
@@ -1806,10 +1806,11 @@ class DexterBoxApp {
       // Avoid zooming the face in too far: cap the zoom and soften the parallax instead,
       // so it still runs over the whole time the number is on screen
       const maxH = (number.offsetWidth * MAX_ZOOM) / IMAGE_RATIO;
-      if (imgH > maxH) {
-        imgH = Math.max(boxH, maxH);
-        drift = (imgH - boxH) / (2 * range);
-      }
+      // The photo must also be wide enough to cover the whole number (no bare edges)
+      const minH = Math.max(boxH, number.offsetWidth / IMAGE_RATIO);
+      if (imgH > maxH) imgH = maxH;
+      imgH = Math.max(imgH, minH);
+      drift = Math.min(1 - FOLLOW, (imgH - boxH) / (2 * range));
       imgW = imgH * IMAGE_RATIO;
       number.style.backgroundSize = `${imgW}px ${imgH}px`;
     };
