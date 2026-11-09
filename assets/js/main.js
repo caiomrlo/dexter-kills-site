@@ -581,7 +581,11 @@ class DexterBoxApp {
         });
       }
 
-      // Section 7 (finale / footer): video frame grows to full screen, then the final call
+      // Section 7 (characters): sticky stage, scroll swaps photo + name/description
+      const castSection = document.getElementById('cast-section');
+      if (castSection) this._initCast(gsap, ScrollTrigger, castSection);
+
+      // Section 8 (finale / footer): video frame grows to full screen, then the final call
       const finaleSection = document.getElementById('finale-section');
       if (finaleSection) this._initFinale(gsap, ScrollTrigger, SplitText, finaleSection);
 
@@ -1546,6 +1550,83 @@ class DexterBoxApp {
       .fromTo(words[2], waiting, show, 198)
       .fromTo(words[2], shown, hide, 300)          // 3 fades before the trophy box
       .set({}, {}, 352);
+  }
+
+  // Characters: the stage holds while the scroll walks a "position" from 0 (first character) to the
+  // last one, with a short rest on each. The photo column in the card slides up by that position, so
+  // mid-swap both photos show stacked with the gap between them; the names slide up through their
+  // slot and the descriptions fade along with it. After the last rest the stage lets go and scrolls
+  // off the top like the rest of the page.
+  _initCast(gsap, ScrollTrigger, section) {
+    const pin = section.querySelector('.cast-pin');
+    const track = section.querySelector('.cast-track');
+    const texts = Array.from(section.querySelectorAll('.cast-text'));
+    const nowEl = section.querySelector('.cast-counter__now');
+    const totalEl = section.querySelector('.cast-counter__total');
+    const count = texts.length;
+    if (!pin || !track || count < 2) return;
+
+    const pad = (n) => String(n).padStart(2, '0');
+    if (totalEl) totalEl.textContent = pad(count);
+
+    // Each name gets an inner line that slides inside the (clipped) heading
+    const parts = texts.map((item) => {
+      const name = item.querySelector('.cast-name');
+      if (name && !name.querySelector('.cast-name__line')) {
+        const line = document.createElement('span');
+        line.className = 'cast-name__line';
+        while (name.firstChild) line.appendChild(name.firstChild);
+        name.appendChild(line);
+      }
+      return {
+        item,
+        line: item.querySelector('.cast-name__line'),
+        desc: item.querySelector('.cast-desc')
+      };
+    });
+
+    if (!this.introNative) {
+      ScrollTrigger.create({ trigger: section, start: 'top top', end: 'bottom bottom', pin, pinSpacing: false });
+    }
+
+    let shown = -1;
+    const state = { pos: 0 };
+    const apply = () => {
+      const pos = state.pos;
+      track.style.setProperty('--cast-pos', pos.toFixed(4));
+      parts.forEach(({ item, line, desc }, i) => {
+        // d: -1 = waiting below, 0 = on stage, 1 = gone through the top
+        const d = Math.max(-1, Math.min(1, pos - i));
+        const near = Math.abs(d) < 1;
+        item.style.visibility = near ? 'visible' : 'hidden';
+        item.setAttribute('aria-hidden', Math.abs(d) < 0.5 ? 'false' : 'true');
+        if (!near) return;
+        if (line) line.style.transform = `translate3d(0, ${(-d * 105).toFixed(2)}%, 0)`;
+        if (desc) {
+          desc.style.opacity = Math.max(0, 1 - Math.abs(d) * 1.8).toFixed(3);
+          desc.style.transform = `translate3d(0, ${(-d * 26).toFixed(1)}px, 0)`;
+        }
+      });
+      const current = Math.round(pos);
+      if (current !== shown) {
+        shown = current;
+        if (nowEl) nowEl.textContent = pad(current + 1);
+      }
+    };
+    apply();
+
+    // Swap, short rest, swap... The rests are short and the easing gentle, so the next photo starts
+    // moving as soon as the page does (ScrollSmoother already smooths the scroll, no extra scrub lag)
+    const REST = 0.22;
+    const tl = gsap.timeline({
+      defaults: { ease: 'none' },
+      scrollTrigger: { trigger: section, start: 'top top', end: 'bottom bottom', scrub: true }
+    });
+    tl.to({}, { duration: REST * 0.5 });
+    for (let i = 1; i < count; i++) {
+      tl.to(state, { pos: i, duration: 1, ease: 'sine.inOut', onUpdate: apply });
+      tl.to({}, { duration: i === count - 1 ? REST * 1.5 : REST });
+    }
   }
 
   // Footer: the looping video starts as a 4:5 frame a little off the left edge and grows on scroll

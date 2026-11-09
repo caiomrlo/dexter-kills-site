@@ -181,9 +181,54 @@
         </div>
       </section>
 
-      <!-- Seção 7 / rodapé: vídeo em loop que começa num quadro 4:5 à esquerda e cresce até cobrir a tela
+      <!-- Seção 7: personagens. O palco fica parado enquanto a rolagem troca a foto (carrossel vertical
+           dentro do cartão) e o nome/descrição à esquerda; no fim a seção solta e rola normalmente (main.js).
+           Fotos provisórias (picsum.photos), trocar pelas definitivas depois. -->
+      <section id="cast-section" class="cast-section" data-section="7" aria-labelledby="cast-title">
+        <div class="cast-pin">
+          <div class="cast-grid">
+            <div class="cast-copy">
+              <p id="cast-title" class="cast-eyebrow">Os personagens</p>
+              <ol class="cast-texts">
+                <li class="cast-text">
+                  <h3 class="cast-name">Dexter <span class="accent">Morgan</span></h3>
+                  <p class="cast-desc">Analista de respingos de sangue da polícia de Miami de dia. À noite, segue o Código de Harry e caça quem escapou da justiça.</p>
+                </li>
+                <li class="cast-text">
+                  <h3 class="cast-name">Debra <span class="accent">Morgan</span></h3>
+                  <p class="cast-desc">A irmã adotiva. Detetive teimosa, boca suja e coração enorme, a última pessoa que deveria descobrir quem o irmão é.</p>
+                </li>
+                <li class="cast-text">
+                  <h3 class="cast-name">Harry <span class="accent">Morgan</span></h3>
+                  <p class="cast-desc">O pai adotivo e policial que viu a escuridão no menino e, em vez de apagá-la, ensinou-a a seguir regras.</p>
+                </li>
+                <li class="cast-text">
+                  <h3 class="cast-name">James <span class="accent">Doakes</span></h3>
+                  <p class="cast-desc">O sargento que nunca confiou no sorriso de Dexter. Foi o primeiro a sentir que havia algo de errado.</p>
+                </li>
+                <li class="cast-text">
+                  <h3 class="cast-name">Arthur <span class="accent">Mitchell</span></h3>
+                  <p class="cast-desc">O Trinity. Pai de família exemplar, diácono, e um dos assassinos mais pacientes que Dexter já enfrentou.</p>
+                </li>
+              </ol>
+              <p class="cast-counter" aria-hidden="true"><span class="cast-counter__now">01</span> / <span class="cast-counter__total">05</span></p>
+            </div>
+            <div class="cast-card">
+              <div class="cast-track">
+                <img class="cast-photo" src="https://picsum.photos/seed/dexter-morgan/900/1125" alt="Dexter Morgan" width="900" height="1125" loading="lazy" decoding="async" />
+                <img class="cast-photo" src="https://picsum.photos/seed/debra-morgan/900/1125" alt="Debra Morgan" width="900" height="1125" loading="lazy" decoding="async" />
+                <img class="cast-photo" src="https://picsum.photos/seed/harry-morgan/900/1125" alt="Harry Morgan" width="900" height="1125" loading="lazy" decoding="async" />
+                <img class="cast-photo" src="https://picsum.photos/seed/james-doakes/900/1125" alt="James Doakes" width="900" height="1125" loading="lazy" decoding="async" />
+                <img class="cast-photo" src="https://picsum.photos/seed/arthur-mitchell/900/1125" alt="Arthur Mitchell" width="900" height="1125" loading="lazy" decoding="async" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seção 8 / rodapé: vídeo em loop que começa num quadro 4:5 à esquerda e cresce até cobrir a tela
            no scroll; a chamada final aparece à direita quando ele está quase em tela cheia (main.js) -->
-      <footer id="finale-section" class="finale-section site-footer" data-section="7">
+      <footer id="finale-section" class="finale-section site-footer" data-section="8">
         <div class="finale-pin">
           <div class="finale-media" aria-hidden="true">
             <video class="finale-video" data-src="assets/video/finale-loop.mp4" poster="assets/video/finale-poster.webp"
