@@ -673,7 +673,7 @@ export class TrophyBoxRenderer {
       envMapIntensity: 0.32
     });
 
-    // Bright cream floor lining beneath the slides (so the 13 crimson blood drops pop vividly)
+    // Bright cream floor lining beneath the slides (so the crimson blood drops pop vividly)
     this.floorLiningMat = new THREE.MeshStandardMaterial({
       color: 0xf4eee2,
       map: rackMaps.map,
@@ -1017,7 +1017,7 @@ export class TrophyBoxRenderer {
       const slideGroup = new THREE.Group();
       slideGroup.matrixAutoUpdate = false;
 
-      const hasBlood = i < 13;
+      const hasBlood = true; // every slide holds a kill (KILLS reuses slots once there are more kills than slides)
       const faceMat = this._createGlassFaceMaterial(i, hasBlood);
       const edgeMat = this._createGlassEdgeMaterial();
 
@@ -1029,10 +1029,10 @@ export class TrophyBoxRenderer {
       glassMesh.receiveShadow = false;
       slideGroup.add(glassMesh);
 
-      // Only the first 13 slides carry a coagulated blood drop specimen
+      // Every slide carries a coagulated blood drop specimen
       let frontBlood = null;
       let backBlood = null;
-      if (i < 13) {
+      {
         const seed = i + 1.0;
         const variantIdx = i % this.bloodMaterials.length;
         const bloodMat = this.bloodMaterials[variantIdx];

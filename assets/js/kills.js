@@ -4,12 +4,12 @@
  * Each kill belongs to a series (see SERIES below): it picks the polaroid frame,
  * the small logo above the dossier and the tint of the background haze.
  *
- * - series: 'new-blood' | 'resurrection'
+ * - series: 'new-blood' | 'resurrection' | 'dexter' ('dexter' = the original 8-season series)
  * - season / episodeNumber / episodeTitle: where the kill happens ('episode' is the label shown in the dossier)
  * - killNumber: Dexter's official kill count on the wiki (null when not tracked)
  * - blood: what happened to the blood slide
- * - photo: assets/img/kills/<series>/<NN>-[sX-]<victim-name>.jpg
- * - slotIndex: which slide in the box holds this kill (0..12 carry blood)
+ * - photo: assets/img/kills/<series>/<NN>-[sX-]<victim-name>.jpg (.webp for the 'dexter' series)
+ * - slotIndex: which slide in the box holds this kill (0..23; every slide carries blood, slots are reused once there are more kills than slides; use index % 24)
  * - headline: plain text; wrap the accent word in *asterisks*
  * - photoPosition: CSS object-position used to keep the face inside the polaroid window
  * - photoZoom: optional extra zoom (1 = fit), anchored on photoPosition
@@ -26,14 +26,513 @@ export const SERIES = {
     title: 'Dexter: Resurrection',
     frame: 'assets/img/series/frame-resurrection.webp',
     logo: 'assets/img/series/logo-resurrection.png'
+  },
+  dexter: {
+    title: 'Dexter',
+    frame: 'assets/img/series/frame-dexter.webp',
+    logo: 'assets/img/series/logo-dexter.png'
   }
 };
 
 export const KILLS = [
   {
     slotIndex: 0,
-    series: 'new-blood',
+    series: 'dexter',
     number: '01',
+    season: 1,
+    episodeNumber: 1,
+    episodeTitle: 'Dexter',
+    episode: 'T01E01 – Dexter',
+    killNumber: null,
+    name: 'Mike Donovan',
+    method: 'Serra elétrica no pescoço',
+    blood: 'Lâmina colhida com um corte de bisturi.',
+    headline: 'Onde tudo *começa*.',
+    description:
+      'Regente de coral e pedófilo que matou ao menos três garotos. Dexter o rende no banco de trás do próprio carro, o leva até os corpos enterrados e o obriga a olhar o que fez.',
+    photo: 'assets/img/kills/dexter/01-s1-mike-donovan.webp',
+    photoPosition: '47% 12%',
+    photoZoom: 1.8
+  },
+  {
+    slotIndex: 1,
+    series: 'dexter',
+    number: '02',
+    season: 1,
+    episodeNumber: 5,
+    episodeTitle: 'Love American Style',
+    episode: 'T01E05 – Love American Style',
+    killNumber: null,
+    name: 'Jorge Castillo',
+    method: 'Injeção de M99 e lâmina',
+    blood: 'A lâmina de Valerie serviu para incriminá-lo.',
+    headline: 'Um casal *sem escrúpulos*.',
+    description:
+      'Contrabandista que trazia cubanos para Miami e matava quem não pagava a taxa. Dexter o injeta num ferro-velho e elimina também a esposa, Valerie, que sabia de tudo.',
+    photo: 'assets/img/kills/dexter/02-s1-jorge-castillo.webp',
+    photoPosition: '45% 20%',
+    photoZoom: 1.5
+  },
+  {
+    slotIndex: 2,
+    series: 'dexter',
+    number: '03',
+    season: 1,
+    episodeNumber: 12,
+    episodeTitle: 'Born Free',
+    episode: 'T01E12 – Born Free',
+    killNumber: null,
+    name: 'Brian Moser',
+    method: 'Garganta cortada e sangue drenado',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'O irmão que ele *não queria* matar.',
+    description:
+      'O Assassino do Caminhão de Gelo, irmão biológico de Dexter. Para proteger Debra, Dexter o mata e encena a cena como um suicídio.',
+    photo: 'assets/img/kills/dexter/03-s1-brian-moser.webp',
+    photoPosition: '50% 18%',
+    photoZoom: 1.4
+  },
+  {
+    slotIndex: 3,
+    series: 'dexter',
+    number: '04',
+    season: 2,
+    episodeNumber: 2,
+    episodeTitle: 'Waiting to Exhale',
+    episode: 'T02E02 – Waiting to Exhale',
+    killNumber: null,
+    name: 'Little Chino',
+    method: 'Facão no peito',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'O único que *escapou*.',
+    description:
+      'Executor da gangue 29th Street Kings e o único homem a fugir de uma sala de matança. Dexter o recaptura e o mata com o próprio facão dele.',
+    photo: 'assets/img/kills/dexter/04-s2-little-chino.webp',
+    photoPosition: '58% 6%',
+    photoZoom: 2.2
+  },
+  {
+    slotIndex: 4,
+    series: 'dexter',
+    number: '05',
+    season: 2,
+    episodeNumber: 9,
+    episodeTitle: 'Resistance Is Futile',
+    episode: 'T02E09 – Resistance Is Futile',
+    killNumber: null,
+    name: 'Santos Jimenez',
+    method: 'Serra elétrica (desmembramento)',
+    blood: 'Lâmina colhida antes do corte.',
+    headline: 'O assassino da *mãe*.',
+    description:
+      'Traficante que, a mando de Hector Estrada, matou Laura Moser a golpes de serra no Massacre do Cais. Dexter o caça em Naples e o desmembra do mesmo jeito.',
+    photo: 'assets/img/kills/dexter/05-s2-santos-jimenez.webp',
+    photoPosition: '50% 18%',
+    photoZoom: 1.5
+  },
+  {
+    slotIndex: 5,
+    series: 'dexter',
+    number: '06',
+    season: 2,
+    episodeNumber: 12,
+    episodeTitle: 'The British Invasion',
+    episode: 'T02E12 – The British Invasion',
+    killNumber: null,
+    name: 'Lila West',
+    method: 'Facada no coração',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'Fogo *nunca* se apaga.',
+    description:
+      'Escultora e madrinha de NA que incendiava tudo que a contrariava e sequestrou Astor e Cody. Dexter a rastreia até Paris e a mata com uma facada rápida no coração.',
+    photo: 'assets/img/kills/dexter/06-s2-lila-west.webp',
+    photoPosition: '62% 15%',
+    photoZoom: 1.6
+  },
+  {
+    slotIndex: 6,
+    series: 'dexter',
+    number: '07',
+    season: 3,
+    episodeNumber: 1,
+    episodeTitle: 'Our Father',
+    episode: 'T03E01 – Our Father',
+    killNumber: null,
+    name: 'Oscar Prado',
+    method: 'Baioneta, em legítima defesa',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'Uma kill *fora do Código*.',
+    description:
+      'Irmão mais novo do promotor Miguel Prado, viciado que atacou Freebo com uma baioneta. Dexter o mata em legítima defesa e passa dias duvidando se matou um inocente.',
+    photo: 'assets/img/kills/dexter/07-s3-oscar-prado.webp',
+    photoPosition: '50% 15%',
+    photoZoom: 1.5
+  },
+  {
+    slotIndex: 7,
+    series: 'dexter',
+    number: '08',
+    season: 3,
+    episodeNumber: 7,
+    episodeTitle: 'Easy as Pie',
+    episode: 'T03E07 – Easy as Pie',
+    killNumber: null,
+    name: 'Camilla Figg',
+    method: 'Eutanásia a pedido',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'Uma *última* torta.',
+    description:
+      'Chefe dos arquivos da Metro Miami, quase uma mãe para Dexter, vivendo os últimos dias de um câncer. Ela implora para morrer e ele atende, contando-lhe no fim que matou o irmão.',
+    photo: 'assets/img/kills/dexter/08-s3-camilla-figg.webp',
+    photoPosition: '45% 22%',
+    photoZoom: 1.4
+  },
+  {
+    slotIndex: 8,
+    series: 'dexter',
+    number: '09',
+    season: 3,
+    episodeNumber: 11,
+    episodeTitle: 'I Had a Dream',
+    episode: 'T03E11 – I Had a Dream',
+    killNumber: null,
+    name: 'Miguel Prado',
+    method: 'Garrote',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'O *melhor amigo*.',
+    description:
+      'Promotor ambicioso que descobriu o segredo de Dexter e quis virar seu parceiro de caçadas. Quando se torna um risco grande demais, Dexter o estrangula com um garrote.',
+    photo: 'assets/img/kills/dexter/09-s3-miguel-prado.webp',
+    photoPosition: '33% 20%',
+    photoZoom: 1.8
+  },
+  {
+    slotIndex: 9,
+    series: 'dexter',
+    number: '10',
+    season: 3,
+    episodeNumber: 12,
+    episodeTitle: 'Do You Take Dexter Morgan?',
+    episode: 'T03E12 – Do You Take Dexter Morgan?',
+    killNumber: null,
+    name: 'George King',
+    method: 'Facada',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'O *Esfolador* de Miami.',
+    description:
+      'Serial killer nicaraguense que esfolava as vítimas e dominou o caso de Debra. Depois que Dexter matou Freebo, King passou a caçá-lo e acabou morto às vésperas do casamento.',
+    photo: 'assets/img/kills/dexter/10-s3-george-king.webp',
+    photoPosition: '50% 40%',
+    photoZoom: 1.3
+  },
+  {
+    slotIndex: 10,
+    series: 'dexter',
+    number: '11',
+    season: 4,
+    episodeNumber: 1,
+    episodeTitle: 'Living the Dream',
+    episode: 'T04E01 – Living the Dream',
+    killNumber: null,
+    name: 'Benito Gomez',
+    method: 'Facada no coração',
+    blood: 'Ritual abreviado por causa de Harrison.',
+    headline: 'A *pressa* de pai.',
+    description:
+      'Ex-boxeador que espancou duas pessoas até a morte, desfigurando-as. Dexter precisa encurtar o ritual porque Harrison está com dor de ouvido e o mata com uma facada no coração.',
+    photo: 'assets/img/kills/dexter/11-s4-benito-gomez.webp',
+    photoPosition: '50% 30%',
+    photoZoom: 1.4
+  },
+  {
+    slotIndex: 11,
+    series: 'dexter',
+    number: '12',
+    season: 4,
+    episodeNumber: 4,
+    episodeTitle: 'Dex Takes a Holiday',
+    episode: 'T04E04 – Dex Takes a Holiday',
+    killNumber: null,
+    name: 'Zoey Kruger',
+    method: 'Facada no peito',
+    blood: 'Lâmina colhida antes do golpe.',
+    headline: 'Policial *assassina*.',
+    description:
+      'Policial de Pembroke Pines que matou o marido e a filha a tiros. Dexter percebe que prefere ser pego a perder a própria família e a esfaqueia no peito.',
+    photo: 'assets/img/kills/dexter/12-s4-zoey-kruger.webp',
+    photoPosition: '50% 35%',
+    photoZoom: 1.2
+  },
+  {
+    slotIndex: 12,
+    series: 'dexter',
+    number: '13',
+    season: 4,
+    episodeNumber: 12,
+    episodeTitle: 'The Getaway',
+    episode: 'T04E12 – The Getaway',
+    killNumber: null,
+    name: 'Arthur Mitchell',
+    method: 'Martelo',
+    blood: 'Lâmina colhida.',
+    headline: 'O *Trinity* cai.',
+    description:
+      'O Assassino da Trindade, que viveu três décadas como pai de família enquanto matava em ciclos de três. Dexter o elimina na sala de matança, mas chega tarde demais para salvar Rita.',
+    photo: 'assets/img/kills/dexter/13-s4-arthur-mitchell.webp',
+    photoPosition: '55% 8%',
+    photoZoom: 1.6
+  },
+  {
+    slotIndex: 13,
+    series: 'dexter',
+    number: '14',
+    season: 5,
+    episodeNumber: 1,
+    episodeTitle: 'My Bad',
+    episode: 'T05E01 – My Bad',
+    killNumber: null,
+    name: 'Rankin',
+    method: 'Pancadas com um gancho',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'Um *impulso*.',
+    description:
+      'Um bocudo numa loja à beira d\'água que cruza o caminho de Dexter no pior momento. Sem passar pelo Código de Harry, Dexter o espanca até a morte num banheiro.',
+    photo: 'assets/img/kills/dexter/14-s5-rankin.webp',
+    photoPosition: '50% 25%',
+    photoZoom: 1.4
+  },
+  {
+    slotIndex: 14,
+    series: 'dexter',
+    number: '15',
+    season: 5,
+    episodeNumber: 3,
+    episodeTitle: 'Practically Perfect',
+    episode: 'T05E03 – Practically Perfect',
+    killNumber: null,
+    name: 'Boyd Fowler',
+    method: 'Facada no coração',
+    blood: 'Sangue coletado num recipiente para virar lâmina depois.',
+    headline: 'O *Finalizador*.',
+    description:
+      'Coletor de animais mortos que, numa gangue de estupradores, matava e descartava as mulheres em barris. Dexter o prende à mesa da própria cozinha e o apunhala no coração.',
+    photo: 'assets/img/kills/dexter/15-s5-boyd-fowler.webp',
+    photoPosition: '45% 15%',
+    photoZoom: 1.9
+  },
+  {
+    slotIndex: 15,
+    series: 'dexter',
+    number: '16',
+    season: 5,
+    episodeNumber: 11,
+    episodeTitle: 'Hop a Freighter',
+    episode: 'T05E11 – Hop a Freighter',
+    killNumber: null,
+    name: 'Stan Liddy',
+    method: 'Facada no peito, em luta',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'Perto *demais*.',
+    description:
+      'Policial corrupto contratado por Quinn para investigar Dexter. Numa van de vigilância, Dexter se vira com as mãos amarradas e empurra a faca de Liddy contra o peito dele.',
+    photo: 'assets/img/kills/dexter/16-s5-stan-liddy.webp',
+    photoPosition: '78% 25%',
+    photoZoom: 1.8
+  },
+  {
+    slotIndex: 16,
+    series: 'dexter',
+    number: '17',
+    season: 6,
+    episodeNumber: 1,
+    episodeTitle: 'Those Kinds of Things',
+    episode: 'T06E01 – Those Kinds of Things',
+    killNumber: null,
+    name: 'Ben e Roger',
+    method: 'Desfibrilador',
+    blood: 'Duas lâminas guardadas no apartamento.',
+    headline: 'Equipe *42*.',
+    description:
+      'Paramédicos mercenários que deixavam as vítimas morrerem para lucrar. Dexter os chama para uma falsa emergência, injeta M99 nos dois e os mata a choques de desfibrilador.',
+    photo: 'assets/img/kills/dexter/17-s6-ben-and-roger.webp',
+    photoPosition: '50% 40%',
+    photoZoom: 1
+  },
+  {
+    slotIndex: 17,
+    series: 'dexter',
+    number: '18',
+    season: 6,
+    episodeNumber: 10,
+    episodeTitle: 'Ricochet Rabbit',
+    episode: 'T06E10 – Ricochet Rabbit',
+    killNumber: null,
+    name: 'Steve Dorsey',
+    method: 'Facada no abdômen',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'O *Adam* errado.',
+    description:
+      'Seguidor de Gellar conhecido na internet como Doomsday_Adam. Dexter o confunde com Travis num iate, tenta injetá-lo e acaba o esfaqueando numa luta.',
+    photo: 'assets/img/kills/dexter/18-s6-steve-dorsey.webp',
+    photoPosition: '50% 30%',
+    photoZoom: 1.6
+  },
+  {
+    slotIndex: 18,
+    series: 'dexter',
+    number: '19',
+    season: 6,
+    episodeNumber: 11,
+    episodeTitle: 'Talk to the Hand',
+    episode: 'T06E11 – Talk to the Hand',
+    killNumber: null,
+    name: 'Beth Dorsey',
+    method: 'Gás Wormwood',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'Presa na *própria* armadilha.',
+    description:
+      'Discípula de Travis que hesitou diante do assassinato, mas seguiu o plano. Trancada no cômodo com o dispositivo Wormwood, ela morre envenenada pelo próprio gás.',
+    photo: 'assets/img/kills/dexter/19-s6-beth-dorsey.webp',
+    photoPosition: '48% 28%',
+    photoZoom: 1.7
+  },
+  {
+    slotIndex: 19,
+    series: 'dexter',
+    number: '20',
+    season: 6,
+    episodeNumber: 12,
+    episodeTitle: 'This Is the Way the World Ends',
+    episode: 'T06E12 – This Is the Way the World Ends',
+    killNumber: null,
+    name: 'Travis Marshall',
+    method: 'Facada no peito',
+    blood: 'Lâmina colhida.',
+    headline: 'O fim do *mundo*.',
+    description:
+      'O Assassino do Juízo Final, que cometia crimes bíblicos para trazer o Apocalipse. Dexter o esfaqueia numa igreja abandonada e Debra entra na hora errada, descobrindo quem o irmão é.',
+    photo: 'assets/img/kills/dexter/20-s6-travis-marshall.webp',
+    photoPosition: '50% 22%',
+    photoZoom: 1.5
+  },
+  {
+    slotIndex: 20,
+    series: 'dexter',
+    number: '21',
+    season: 7,
+    episodeNumber: 4,
+    episodeTitle: 'Run',
+    episode: 'T07E04 – Run',
+    killNumber: null,
+    name: 'Ray Speltzer',
+    method: 'Estaca no coração',
+    blood: 'Lâmina colhida.',
+    headline: 'Uma kill room *sobre rodas*.',
+    description:
+      'Parolee musculoso e provável assassino de mulheres. Dexter transforma o trailer dele numa sala de matança portátil, vence a luta corpo a corpo e crava uma estaca no coração.',
+    photo: 'assets/img/kills/dexter/21-s7-ray-speltzer.webp',
+    photoPosition: '40% 55%',
+    photoZoom: 1.5
+  },
+  {
+    slotIndex: 21,
+    series: 'dexter',
+    number: '22',
+    season: 7,
+    episodeNumber: 10,
+    episodeTitle: 'The Dark... Whatever',
+    episode: 'T07E10 – The Dark... Whatever',
+    killNumber: null,
+    name: 'Clint McKay',
+    method: 'Facada no coração',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'Fora do Código, *por vontade*.',
+    description:
+      'Pai abusivo de Hannah que voltou para extorquir a filha. Dexter o embrulha em plástico no barco e o mata não porque o Código manda, mas porque quer.',
+    photo: 'assets/img/kills/dexter/22-s7-clint-mckay.webp',
+    photoPosition: '47% 12%',
+    photoZoom: 1.6
+  },
+  {
+    slotIndex: 22,
+    series: 'dexter',
+    number: '23',
+    season: 7,
+    episodeNumber: 12,
+    episodeTitle: 'Surprise, Motherfucker!',
+    episode: 'T07E12 – Surprise, Motherfucker!',
+    killNumber: null,
+    name: 'Hector Estrada',
+    method: 'Facada no peito',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'O último da *lista*.',
+    description:
+      'Chefão que ordenou a morte de Laura Moser e já havia escapado de Dexter uma vez. Preso na sala de matança, ele é esfaqueado no peito.',
+    photo: 'assets/img/kills/dexter/23-s7-hector-estrada.webp',
+    photoPosition: '37% 18%',
+    photoZoom: 1.7
+  },
+  {
+    slotIndex: 23,
+    series: 'dexter',
+    number: '24',
+    season: 8,
+    episodeNumber: 8,
+    episodeTitle: 'Are We There Yet?',
+    episode: 'T08E08 – Are We There Yet?',
+    killNumber: null,
+    name: 'A.J. Yates',
+    method: 'Facada no peito',
+    blood: 'Nenhuma lâmina registrada.',
+    headline: 'Um *falso* Cirurgião.',
+    description:
+      'Tido por Dexter e Vogel como o Cirurgião do Cérebro, mas apenas um assassino de mulheres. Dexter o mata, embrulha em plástico e o joga ao mar, com Debra e Vogel a bordo.',
+    photo: 'assets/img/kills/dexter/24-s8-a-j-yates.webp',
+    photoPosition: '50% 55%',
+    photoZoom: 1.8
+  },
+  {
+    slotIndex: 0,
+    series: 'dexter',
+    number: '25',
+    season: 8,
+    episodeNumber: 12,
+    episodeTitle: 'Remember the Monsters?',
+    episode: 'T08E12 – Remember the Monsters?',
+    killNumber: null,
+    name: 'Oliver Saxon',
+    method: 'Caneta na carótida',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'O *verdadeiro* Cirurgião.',
+    description:
+      'O Cirurgião do Cérebro, protegido por Vogel desde a infância. Saxon tenta atacar Dexter com uma caneta, mas Dexter vira a arma e a crava na carótida esquerda dele.',
+    photo: 'assets/img/kills/dexter/25-s8-oliver-saxon.webp',
+    photoPosition: '50% 22%',
+    photoZoom: 1.4
+  },
+  {
+    slotIndex: 1,
+    series: 'dexter',
+    number: '26',
+    season: 8,
+    episodeNumber: 12,
+    episodeTitle: 'Remember the Monsters?',
+    episode: 'T08E12 – Remember the Monsters?',
+    killNumber: null,
+    name: 'Debra Morgan',
+    method: 'Respirador desligado',
+    blood: 'Nenhum sangue coletado.',
+    headline: 'A *única* que ele amou.',
+    description:
+      'Baleada por Saxon e em coma por um coágulo, sem chance de voltar. Dexter desliga o suporte de vida e diz que a ama, as últimas palavras que ela ouve.',
+    photo: 'assets/img/kills/dexter/26-s8-debra-morgan.webp',
+    photoPosition: '70% 50%',
+    photoZoom: 1.3
+  },
+  {
+    slotIndex: 2,
+    series: 'new-blood',
+    number: '27',
     season: 1,
     episodeNumber: 1,
     episodeTitle: 'Cold Snap',
@@ -50,9 +549,9 @@ export const KILLS = [
     photoZoom: 2.2
   },
   {
-    slotIndex: 1,
+    slotIndex: 3,
     series: 'new-blood',
-    number: '02',
+    number: '28',
     season: 1,
     episodeNumber: 5,
     episodeTitle: 'Runaway',
@@ -69,9 +568,9 @@ export const KILLS = [
     photoZoom: 1
   },
   {
-    slotIndex: 2,
+    slotIndex: 4,
     series: 'new-blood',
-    number: '03',
+    number: '29',
     season: 1,
     episodeNumber: 8,
     episodeTitle: 'Unfair Game',
@@ -88,9 +587,9 @@ export const KILLS = [
     photoZoom: 1.9
   },
   {
-    slotIndex: 3,
+    slotIndex: 5,
     series: 'new-blood',
-    number: '04',
+    number: '30',
     season: 1,
     episodeNumber: 9,
     episodeTitle: 'The Family Business',
@@ -107,9 +606,9 @@ export const KILLS = [
     photoZoom: 1.2
   },
   {
-    slotIndex: 4,
+    slotIndex: 6,
     series: 'new-blood',
-    number: '05',
+    number: '31',
     season: 1,
     episodeNumber: 10,
     episodeTitle: 'Sins of the Father',
@@ -126,9 +625,9 @@ export const KILLS = [
     photoZoom: 1.4
   },
   {
-    slotIndex: 5,
+    slotIndex: 7,
     series: 'resurrection',
-    number: '06',
+    number: '32',
     season: 1,
     episodeNumber: 3,
     episodeTitle: 'Backseat Driver',
@@ -145,9 +644,9 @@ export const KILLS = [
     photoZoom: 1.2
   },
   {
-    slotIndex: 6,
+    slotIndex: 8,
     series: 'resurrection',
-    number: '07',
+    number: '33',
     season: 1,
     episodeNumber: 4,
     episodeTitle: 'Call Me Red',
@@ -164,9 +663,9 @@ export const KILLS = [
     photoZoom: 1.5
   },
   {
-    slotIndex: 7,
+    slotIndex: 9,
     series: 'resurrection',
-    number: '08',
+    number: '34',
     season: 1,
     episodeNumber: 6,
     episodeTitle: 'Cats and Mouse',
@@ -183,9 +682,9 @@ export const KILLS = [
     photoZoom: 1.1
   },
   {
-    slotIndex: 8,
+    slotIndex: 10,
     series: 'resurrection',
-    number: '09',
+    number: '35',
     season: 1,
     episodeNumber: 7,
     episodeTitle: 'Course Correction',
@@ -202,9 +701,9 @@ export const KILLS = [
     photoZoom: 1.5
   },
   {
-    slotIndex: 9,
+    slotIndex: 11,
     series: 'resurrection',
-    number: '10',
+    number: '36',
     season: 1,
     episodeNumber: 10,
     episodeTitle: 'And Justice For All...',
@@ -221,9 +720,9 @@ export const KILLS = [
     photoZoom: 1.7
   },
   {
-    slotIndex: 10,
+    slotIndex: 12,
     series: 'resurrection',
-    number: '11',
+    number: '37',
     season: 2,
     episodeNumber: 1,
     episodeTitle: 'Risky Business',
@@ -240,9 +739,9 @@ export const KILLS = [
     photoZoom: 1.8
   },
   {
-    slotIndex: 11,
+    slotIndex: 13,
     series: 'resurrection',
-    number: '12',
+    number: '38',
     season: 2,
     episodeNumber: 1,
     episodeTitle: 'Risky Business',
@@ -259,9 +758,9 @@ export const KILLS = [
     photoZoom: 1.8
   },
   {
-    slotIndex: 12,
+    slotIndex: 14,
     series: 'resurrection',
-    number: '13',
+    number: '39',
     season: 2,
     episodeNumber: 1,
     episodeTitle: 'Risky Business',

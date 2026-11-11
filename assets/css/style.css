@@ -816,7 +816,8 @@ html::-webkit-scrollbar-thumb:hover {
 }
 
 .kill-scrim[data-series='new-blood']::before,
-.kill-scrim[data-series='resurrection']::after {
+.kill-scrim[data-series='resurrection']::after,
+.kill-scrim[data-series='dexter']::after {
   opacity: 1;
 }
 

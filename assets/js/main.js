@@ -45,7 +45,7 @@ const FOCUS_POSE = {
 const REVEAL_CAM = { distance: 2.4, centerX: -2.1, centerY: 0.9, yaw: -0.3, pitch: 0.1 };
 
 /**
- * 7 Blood Slides (all with blood specimens, indices < 13) that start arranged around
+ * 7 Blood Slides (all with blood specimens, any index) that start arranged around
  * the page in Section 1 matching the reference composition, and smoothly glide into
  * their respective slots inside the open Trophy Box as the user scrolls to Section 4.
  */
