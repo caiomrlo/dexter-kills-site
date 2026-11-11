@@ -40,6 +40,42 @@ function fbm2D(x, y, octaves = 4, seed = 0) {
   return val;
 }
 
+/** Value noise that repeats every px x py lattice cells, so a texture built from it tiles. */
+function noiseP(x, y, px, py, seed = 0) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * fx * (fx * (fx * 6.0 - 15.0) + 10.0);
+  const uy = fy * fy * fy * (fy * (fy * 6.0 - 15.0) + 10.0);
+  const x0 = ((ix % px) + px) % px;
+  const y0 = ((iy % py) + py) % py;
+  const x1 = (x0 + 1) % px;
+  const y1 = (y0 + 1) % py;
+
+  const a = hash2(x0, y0, seed);
+  const b = hash2(x1, y0, seed);
+  const c = hash2(x0, y1, seed);
+  const d = hash2(x1, y1, seed);
+
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+/** Tileable fbm over u, v in [0, 1), normalised to ~0..1. px/py = cells across the tile at the first octave. */
+function fbmP(u, v, px, py, octaves = 4, seed = 0) {
+  let val = 0.0;
+  let amp = 0.5;
+  let norm = 0.0;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noiseP(u * px, v * py, px, py, seed + i * 19.19);
+    norm += amp;
+    px *= 2;
+    py *= 2;
+    amp *= 0.5;
+  }
+  return val / norm;
+}
+
 function clamp01(v) {
   return v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v;
 }
@@ -91,52 +127,114 @@ function heightToNormal(heightBuf, width, height, strength = 2.0, repeat = true)
   return out;
 }
 
-/** 1. Fine Honduras Mahogany / Rosewood (albedo, normal, roughness). */
+/**
+ * 1. Flat-sawn reddish mahogany (albedo, normal, roughness). Seamlessly tileable.
+ * Grain runs along v (texture rows); geometry.js maps v along each board's length.
+ * Layers: wavy growth bands with a soft earlywood -> sharp latewood edge, long fibre
+ * streaks, short dark pore dashes and broad colour blotches.
+ */
 export function woodPixels() {
-  const width = 512;
-  const height = 512;
+  const width = 1024;
+  const height = 1024;
   const albedo = rgba(width, height);
   const rough = rgba(width, height);
   const aData = albedo.data;
   const rData = rough.data;
   const heightBuf = new Float32Array(width * height);
 
+  const BANDS = 26; // growth bands across one tile
+  // Light earlywood, mid, dark latewood (reddish mahogany)
+  const L = [176, 74, 46];
+  const M = [122, 40, 24];
+  const D = [52, 14, 9];
+
+  // The slow fields (grain meander, colour blotches) are smooth, so build them on a
+  // coarse tileable grid and interpolate: same look, a fraction of the noise calls.
+  const C = 256;
+  const meander = new Float32Array(C * C);
+  const blotches = new Float32Array(C * C);
+  for (let cy = 0; cy < C; cy++) {
+    for (let cx = 0; cx < C; cx++) {
+      const cu = cx / C;
+      const cv = cy / C;
+      meander[cy * C + cx] = (fbmP(cu, cv, 3, 2, 4, 1.7) - 0.5) * 3.2 + (fbmP(cu, cv, 9, 3, 2, 4.1) - 0.5) * 0.35;
+      blotches[cy * C + cx] = fbmP(cu, cv, 2, 3, 3, 9.9);
+    }
+  }
+  const sampleCoarse = (buf, u, v) => {
+    const fx = u * C;
+    const fy = v * C;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const xa = x0 % C;
+    const xb = (x0 + 1) % C;
+    const ya = (y0 % C) * C;
+    const yb = ((y0 + 1) % C) * C;
+    const top = buf[ya + xa] + (buf[ya + xb] - buf[ya + xa]) * tx;
+    const bot = buf[yb + xa] + (buf[yb + xb] - buf[yb + xa]) * tx;
+    return top + (bot - top) * ty;
+  };
+
   for (let y = 0; y < height; y++) {
     const v = y / height;
     for (let x = 0; x < width; x++) {
       const u = x / width;
 
-      const warp = fbm2D(u * 4.0, v * 16.0, 4, 1.7) * 0.22;
-      const streak = (u * 38.0 + v * 6.0 + warp * 8.0);
-      const broadBand = Math.sin(streak * Math.PI * 2.0) * 0.5 + 0.5;
-      const fineStrands = fbm2D(u * 95.0, v * 18.0, 4, 5.3);
+      // Gentle sideways meander of the grain (in band units)
+      const m = sampleCoarse(meander, u, v);
+      const uw = u + m / BANDS; // fibres follow the meander too
 
-      const poreNoise = noise2D(u * 210.0, v * 36.0, 11.4);
-      const poreMask = smoothstep(0.75, 0.96, poreNoise);
+      // Growth bands: each one ramps from light to a crisp dark edge, width/contrast varies per band
+      const g = u * BANDS + m;
+      const gi = Math.floor(g);
+      const f = g - gi;
+      const bandId = ((gi % BANDS) + BANDS) % BANDS;
+      const bh = hash2(bandId, 0, 3.3);
+      const bandStrength = 0.45 + hash2(bandId, 1, 6.1) * 0.55;
+      const band = Math.pow(f, 2.2 + bh * 3.5) * (1.0 - smoothstep(0.96, 1.0, f) * 0.6) * bandStrength;
 
-      const mixFactor = broadBand * 0.35 + fineStrands * 0.65;
-      let r = 82 + mixFactor * 68;
-      let g = 22 + mixFactor * 22;
-      let b = 10 + mixFactor * 10;
+      // Long fibre streaks (fine across, stretched along the grain)
+      const fiber = fbmP(uw, v, 150, 3, 3, 5.3);
+      const fiberFine = noiseP(uw * 460, v * 8, 460, 8, 8.8);
 
-      const amber = Math.pow(fineStrands, 2.0) * 0.35;
-      r += amber * 48;
-      g += amber * 16;
-      b += amber * 6;
+      // Pores: thin dark dashes stretched along the grain
+      const pn = noiseP(uw * 380, v * 22, 380, 22, 11.4);
+      const pore = smoothstep(0.84, 0.97, pn);
 
-      r *= (1.0 - poreMask * 0.38);
-      g *= (1.0 - poreMask * 0.42);
-      b *= (1.0 - poreMask * 0.42);
+      // Broad colour variation between areas of the board
+      const blotch = sampleCoarse(blotches, u, v);
+
+      let t = 0.30 + band * 0.42 + (fiber - 0.5) * 0.55 + (fiberFine - 0.5) * 0.18 + (blotch - 0.5) * 0.45;
+      t = clamp01(t);
+
+      let r, gg, b;
+      if (t < 0.5) {
+        const k = t / 0.5;
+        r = L[0] + (M[0] - L[0]) * k;
+        gg = L[1] + (M[1] - L[1]) * k;
+        b = L[2] + (M[2] - L[2]) * k;
+      } else {
+        const k = (t - 0.5) / 0.5;
+        r = M[0] + (D[0] - M[0]) * k;
+        gg = M[1] + (D[1] - M[1]) * k;
+        b = M[2] + (D[2] - M[2]) * k;
+      }
+      const poreDark = 1.0 - pore * 0.45;
+      r *= poreDark;
+      gg *= poreDark;
+      b *= poreDark;
 
       const idx = (y * width + x) * 4;
       aData[idx] = Math.min(255, Math.max(0, Math.round(r)));
-      aData[idx + 1] = Math.min(255, Math.max(0, Math.round(g)));
+      aData[idx + 1] = Math.min(255, Math.max(0, Math.round(gg)));
       aData[idx + 2] = Math.min(255, Math.max(0, Math.round(b)));
       aData[idx + 3] = 255;
 
-      heightBuf[y * width + x] = fineStrands * 0.25 + broadBand * 0.08 - poreMask * 0.50;
+      heightBuf[y * width + x] = fiber * 0.22 + fiberFine * 0.06 - band * 0.10 - pore * 0.55;
 
-      const roughVal = Math.round((0.20 + fineStrands * 0.07 + poreMask * 0.28) * 255);
+      const roughVal = Math.round(clamp01(0.20 + band * 0.06 + (1.0 - fiber) * 0.05 + pore * 0.30) * 255);
       rData[idx] = roughVal;
       rData[idx + 1] = roughVal;
       rData[idx + 2] = roughVal;
@@ -144,7 +242,7 @@ export function woodPixels() {
     }
   }
 
-  return { map: albedo, roughnessMap: rough, normalMap: heightToNormal(heightBuf, width, height, 1.4, true) };
+  return { map: albedo, roughnessMap: rough, normalMap: heightToNormal(heightBuf, width, height, 1.6, true) };
 }
 
 /** 2. Brushed Antique Brass (albedo, normal, roughness). */

@@ -91,6 +91,37 @@ export function getSlideSlotZ(index) {
   return startZ + (BOX_SPECS.numSlides - 0.5 - index) * stepZ;
 }
 
+/** World units covered by one tile of the wood texture. */
+const WOOD_TILE = 2.2;
+
+/**
+ * Box-projected UVs for wood boards. Box geometries stretch the whole texture over every
+ * face, which squashes the grain on thin boards. Instead each face samples the tileable
+ * texture at real scale, with the grain (texture v) running along the board's longer side
+ * on that face, and an offset from the face's plane so neighbouring faces don't repeat.
+ */
+function applyGrainUVs(geom, center, size) {
+  const pos = geom.attributes.position;
+  const nrm = geom.attributes.normal;
+  const uv = geom.attributes.uv;
+  const p = [0, 0, 0];
+  for (let i = 0; i < pos.count; i++) {
+    const n = [nrm.getX(i), nrm.getY(i), nrm.getZ(i)];
+    const ax = [Math.abs(n[0]), Math.abs(n[1]), Math.abs(n[2])];
+    const axis = ax[0] >= ax[1] && ax[0] >= ax[2] ? 0 : ax[1] >= ax[2] ? 1 : 2;
+    const [a, b] = axis === 0 ? [2, 1] : axis === 1 ? [0, 2] : [0, 1];
+    const [along, across] = size[a] >= size[b] ? [a, b] : [b, a];
+
+    p[0] = pos.getX(i) + center[0];
+    p[1] = pos.getY(i) + center[1];
+    p[2] = pos.getZ(i) + center[2];
+    const plane = center[axis] + Math.sign(n[axis]) * size[axis] * 0.5 + axis * 1.7;
+
+    uv.setXY(i, p[across] / WOOD_TILE + plane * 0.618, p[along] / WOOD_TILE + plane * 0.383);
+  }
+  uv.needsUpdate = true;
+}
+
 /**
  * Helper to create a positioned RoundedBox mesh from [minX, minY, minZ] to [maxX, maxY, maxZ]
  */
@@ -103,8 +134,11 @@ function createBoxBetween(minX, minY, minZ, maxX, maxY, maxZ, radius, segments, 
     ? new RoundedBoxGeometry(sx, sy, sz, segments, r)
     : new THREE.BoxGeometry(sx, sy, sz);
 
+  const center = [(minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5];
+  if (material.userData.grainUV) applyGrainUVs(geom, center, [sx, sy, sz]);
+
   const mesh = new THREE.Mesh(geom, material);
-  mesh.position.set((minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5);
+  mesh.position.set(center[0], center[1], center[2]);
   mesh.castShadow = castShadow;
   mesh.receiveShadow = receiveShadow;
   return mesh;

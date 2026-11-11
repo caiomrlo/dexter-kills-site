@@ -642,6 +642,8 @@ export class TrophyBoxRenderer {
       reflectivity: 0.50,
       envMapIntensity: 0.78
     }));
+    // Real-scale, grain-aligned UVs on the wood boards (see applyGrainUVs in geometry.js)
+    this.woodMat.userData.grainUV = true;
 
     // 2. Brushed Antique Brass Hardware
     this.brassMat = new Lacquered(physicalOnly({
